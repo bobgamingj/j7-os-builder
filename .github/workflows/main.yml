@@ -1,55 +1,166 @@
 name: Build postmarketOS J7 v4
-on: [workflow_dispatch]
+
+on:
+  workflow_dispatch:
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip openssl git python3-tomli
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
 
+    env:
+      PMB_EXPECT_NO_PROMPTS: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ####################################################################
+      # System dependencies
+      ####################################################################
+      - name: Install dependencies
+        run: |
+          set -euxo pipefail
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            git \
+            python3 \
+            python3-pip \
+            python3-venv \
+            python3-setuptools \
+            python3-wheel \
+            python3-tomli \
+            openssl \
+            sudo \
+            zip \
+            unzip \
+            build-essential \
+            ca-certificates \
+            curl \
+            rsync
+
+      ####################################################################
+      # Extra memory for kernel compilation
+      ####################################################################
+      - name: Setup swap
+        run: |
+          set -euxo pipefail
+
+          sudo dd if=/dev/zero of=/mnt/pmos-swapfile bs=1M count=8192 status=progress
+          sudo chmod 600 /mnt/pmos-swapfile
+          sudo mkswap /mnt/pmos-swapfile
+          sudo swapon /mnt/pmos-swapfile
+
+          echo "Swap status:"
+          swapon --show
+
+          echo "Memory status:"
+          free -h
+
+      ####################################################################
+      # Cache apk packages and build cache
+      ####################################################################
+      - name: Cache pmbootstrap workdir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/var/pmbootstrap
+          key: pmos-j7-${{ runner.os }}-${{ hashFiles('.github/workflows/**') }}
+          restore-keys: |
+            pmos-j7-${{ runner.os }}-
+
+      ####################################################################
+      # Install pmbootstrap
+      ####################################################################
       - name: Clone pmbootstrap
         run: |
+          set -euxo pipefail
+
           git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-          mkdir -p ~/.local/bin
-          ln -s "$PWD/pmbootstrap/pmbootstrap.py" ~/.local/bin/pmbootstrap
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup Virtual Memory
+      - name: Install pmbootstrap
         run: |
-          # J7 kernel needs extra memory to compile
-          sudo fallocate -l 4G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          set -euxo pipefail
 
-      - name: Forced Initialization
+          python3 -m venv ~/pmos-venv
+
+          source ~/pmos-venv/bin/activate
+
+          pip install --upgrade pip wheel setuptools
+
+          pip install ./pmbootstrap
+
+          echo "$HOME/pmos-venv/bin" >> $GITHUB_PATH
+
+      ####################################################################
+      # Initialize pmbootstrap
+      ####################################################################
+      - name: Initialize pmbootstrap
         run: |
+          set -euxo pipefail
+
           rm -rf ~/.config/pmbootstrap.cfg
-          # We use 'yes' to hit Enter for every question
-          printf "/home/runner/workdir\nedge\n" | yes '' | pmbootstrap init
-          
-          # Inject your specific J7 hardware settings
-          pmbootstrap config device samsung-j7elte
-          pmbootstrap config ui xfce4
+          rm -rf ~/.local/var/pmbootstrap
+
+          mkdir -p ~/pmos-workdir
+
+          cat <<EOF > answers.txt
+          ~/pmos-workdir
+          edge
+          samsung-j7elte
+          xfce4
+          EOF
+
+          pmbootstrap init --details-to-stdout < answers.txt
+
+      ####################################################################
+      # Pull latest device packages
+      ####################################################################
+      - name: Update package repositories
+        run: |
+          set -euxo pipefail
+
           pmbootstrap pull
 
-      - name: Build Android Recovery Zip
+      ####################################################################
+      # Build recovery zip
+      ####################################################################
+      - name: Build Android recovery zip
         run: |
+          set -euxo pipefail
+
           pmbootstrap zap -m
-          # PMB_EXPECT_NO_PROMPTS=1 replaces --assume-yes in new versions
-          export PMB_EXPECT_NO_PROMPTS=1
-          pmbootstrap install --android-recovery-zip --no-fde
 
-      - name: Export and Upload
+          pmbootstrap install \
+            --android-recovery-zip \
+            --no-fde
+
+      ####################################################################
+      # Export artifacts
+      ####################################################################
+      - name: Export build
         run: |
-          pmbootstrap export
-          mkdir -p output
-          cp -L /tmp/postmarketOS-export/*.zip output/
+          set -euxo pipefail
 
-      - name: Upload Finished OS
+          mkdir -p output
+
+          pmbootstrap export
+
+          find /tmp/postmarketOS-export -type f
+
+          cp -v /tmp/postmarketOS-export/*.zip output/ || true
+          cp -v /tmp/postmarketOS-export/*.tar.gz output/ || true
+
+          ls -lah output
+
+      ####################################################################
+      # Upload artifacts
+      ####################################################################
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: J7-postmarketOS-XFCE
-          path: output/*.zip
+          name: postmarketOS-samsung-j7elte
+          path: output/*
+          if-no-files-found: error
