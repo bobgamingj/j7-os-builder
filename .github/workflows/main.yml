@@ -16,34 +16,33 @@ jobs:
           ln -s "$PWD/pmbootstrap/pmbootstrap.py" ~/.local/bin/pmbootstrap
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Smart Initialization
+      - name: Forced Initialization
         run: |
-          # This provides the answers to the prompts in order:
-          # 1. Work path
-          # 2. Channel (edge)
-          # 3. Vendor (samsung)
-          # 4. Device (j7elte)
-          # 5. Confirm testing (y)
-          # 6. UI (xfce4)
-          # 7. Rest are default Enters
-          printf "/home/runner/workdir\nedge\nsamsung\nj7elte\ny\nxfce4\n\n\n\n\n\n\n\n\n\n\n\n" | pmbootstrap init
-
-      - name: Pull and Prepare
-        run: |
-          pmbootstrap pull
-          # We force the UI and Device again just in case init skipped them
+          # 1. Clean up any old broken configs
+          rm -rf ~/.config/pmbootstrap.cfg
+          
+          # 2. We provide the Workdir and Channel, then let 'yes' handle the other 20+ questions
+          # This accepts all defaults for things like Timezone and Locale
+          printf "/home/runner/workdir\nedge\n" | yes '' | pmbootstrap init
+          
+          # 3. Now we OVERRIDE the defaults with the specific Samsung J7 hardware settings
           pmbootstrap config device samsung-j7elte
           pmbootstrap config ui xfce4
+          
+          # 4. Download the actual Samsung code
+          pmbootstrap pull
 
       - name: Build Android Recovery Zip
         run: |
-          # This is the long part (15-20 mins)
+          # The 'zap' ensures the environment is fresh before starting the big build
+          pmbootstrap zap -m
           pmbootstrap install --android-recovery-zip --no-fde --assume-yes
 
       - name: Export and Upload
         run: |
           pmbootstrap export
           mkdir -p output
+          # -L ensures we get the real file, not a shortcut
           cp -L /tmp/postmarketOS-export/*.zip output/
 
       - name: Upload Finished OS
