@@ -1,4 +1,4 @@
-name: Build postmarketOS for Samsung J7
+name: Build postmarketOS Samsung J7
 
 on:
   workflow_dispatch:
@@ -12,10 +12,15 @@ jobs:
       PMB_EXPECT_NO_PROMPTS: "1"
 
     steps:
+      ####################################################################
+      # Install dependencies
+      ####################################################################
       - name: Install dependencies
         run: |
           set -euxo pipefail
+
           sudo apt update
+
           sudo apt install -y \
             git \
             python3 \
@@ -25,37 +30,64 @@ jobs:
             zip \
             unzip \
             rsync \
-            sudo
+            sudo \
+            curl
 
+      ####################################################################
+      # Create swap memory
+      ####################################################################
       - name: Create swap memory
         run: |
           set -euxo pipefail
+
           sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=8192
+
           sudo chmod 600 /mnt/swapfile
+
           sudo mkswap /mnt/swapfile
+
           sudo swapon /mnt/swapfile
-          swapon --show
+
           free -h
 
+      ####################################################################
+      # Clone pmbootstrap
+      ####################################################################
       - name: Clone pmbootstrap
         run: |
           set -euxo pipefail
-          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
+          git clone --depth=1 \
+            https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+
+      ####################################################################
+      # Install pmbootstrap
+      ####################################################################
       - name: Install pmbootstrap
         run: |
           set -euxo pipefail
+
           python3 -m venv ~/venv
+
           source ~/venv/bin/activate
+
           pip install --upgrade pip setuptools wheel
+
           pip install tomli
+
           pip install ./pmbootstrap
+
           echo "$HOME/venv/bin" >> $GITHUB_PATH
 
+      ####################################################################
+      # Initialize pmbootstrap
+      ####################################################################
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
+
           rm -rf ~/.config/pmbootstrap.cfg
+
           mkdir -p ~/pmos
 
           printf '%s\n' \
@@ -63,26 +95,49 @@ jobs:
             "edge" \
             "samsung-j7elte" \
             "xfce4" \
-            | pmbootstrap init --details-to-stdout
+            "" \
+            "" \
+            "" \
+            | pmbootstrap init
 
+      ####################################################################
+      # Update repositories
+      ####################################################################
       - name: Pull packages
         run: |
           set -euxo pipefail
+
           pmbootstrap pull
 
+      ####################################################################
+      # Build image
+      ####################################################################
       - name: Build image
         run: |
           set -euxo pipefail
-          pmbootstrap install --android-recovery-zip --no-fde
 
+          pmbootstrap install \
+            --android-recovery-zip \
+            --no-fde
+
+      ####################################################################
+      # Export image
+      ####################################################################
       - name: Export image
         run: |
           set -euxo pipefail
+
           mkdir -p output
+
           pmbootstrap export
-          cp -v /tmp/postmarketOS-export/* output/ || true
+
+          cp -rv /tmp/postmarketOS-export/* output/ || true
+
           ls -lah output
 
+      ####################################################################
+      # Upload artifact
+      ####################################################################
       - name: Upload image
         uses: actions/upload-artifact@v4
         with:
