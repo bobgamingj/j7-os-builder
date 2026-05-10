@@ -1,4 +1,4 @@
-name: Build postmarketOS J7 Final
+name: Build postmarketOS J7 v3
 on: [workflow_dispatch]
 jobs:
   build:
@@ -16,49 +16,31 @@ jobs:
           ln -s "$PWD/pmbootstrap/pmbootstrap.py" ~/.local/bin/pmbootstrap
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Manually Create Config File
+      - name: Initialize pmbootstrap (v3 Style)
         run: |
-          # This bypasses all questions and errors
-          mkdir -p ~/.config
-          cat <<EOF > ~/.config/pmbootstrap.cfg
-          [pmbootstrap]
-          aports = /home/runner/workdir/cache_git/pmaports
-          ccache_size = 5G
-          is_default_channel = False
-          device = samsung-j7elte
-          extra_packages = none
-          hostname = j7-linux
-          build_pkgs_on_install = True
-          jobs = 4
-          kernel = default
-          locale = en_US.UTF-8
-          mirror_alpine = http://dl-cdn.alpinelinux.org/alpine/
-          mirrors_postmarketos = http://mirror.postmarketos.org/postmarketos/
-          nonfree_firmware = True
-          nonfree_userland = False
-          ui = xfce4
-          user = user
-          work = /home/runner/workdir
-          channel = edge
-          EOF
-
-      - name: Pull Ports and Prepare
-        run: |
-          # This downloads the actual J7 code from the internet
-          pmbootstrap pull
-          # We need to zap (clean) the environment once to prevent lock errors
-          pmbootstrap zap -m
+          # 1. Remove any broken old config
+          rm -rf ~/.config/pmbootstrap.cfg
+          
+          # 2. Feed the answers to 'init' in the exact order it asks:
+          # Answer 1: Work path (/home/runner/workdir)
+          # Answer 2: Channel (edge)
+          # Answer 3: Device (samsung-j7elte)
+          # Answer 4: Confirm testing repo (y)
+          # Answer 5: UI (xfce4)
+          # Answer 6+: Just Enters for the rest
+          printf "/home/runner/workdir\nedge\nsamsung-j7elte\ny\nxfce4\n\n\n\n\n\n\n\n\n" | pmbootstrap init
 
       - name: Build Android Recovery Zip
         run: |
-          # This will take 15-20 minutes. It's building your whole OS!
+          # Use --assume-yes to skip the "Do you want to continue?" prompt
           pmbootstrap install --android-recovery-zip --no-fde --assume-yes
 
       - name: Export and Upload
         run: |
           pmbootstrap export
           mkdir -p output
-          cp /tmp/postmarketOS-export/*.zip output/
+          # Copying the real file (not the symlink) to output
+          cp -L /tmp/postmarketOS-export/*.zip output/
 
       - name: Upload Finished OS
         uses: actions/upload-artifact@v4
