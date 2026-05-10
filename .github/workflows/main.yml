@@ -4,39 +4,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Install pmbootstrap
-        run: pip3 install pmbootstrap
-      - name: Generate Config
+      - name: Install dependencies
         run: |
-          mkdir -p ~/.config
-          cat <<EOF > ~/.config/pmbootstrap.cfg
-          [pmbootstrap]
-          aports = /home/runner/.local/var/pmbootstrap/cache_git/pmaports
-          ccache_size = 5G
-          is_default_channel = False
-          device = j7elte
-          extra_packages = none
-          hostname = linux
-          build_pkgs_on_install = True
-          jobs = 4
-          kernel = default
-          locale = en_US.UTF-8
-          mirror_alpine = http://dl-cdn.alpinelinux.org/alpine/
-          mirrors_postmarketos = http://mirror.postmarketos.org/postmarketos/
-          nonfree_firmware = True
-          nonfree_userland = False
-          ui = xfce4
-          user = user
-          work = /home/runner/.local/var/pmbootstrap
-          channel = edge
-          EOF
-          pmbootstrap pull
-      - name: Build Zip
-        run: pmbootstrap install --android-recovery-zip
-      - name: Export File
+          sudo apt-get update
+          sudo apt-get install -y python3-pip openssl git
+          pip3 install pmbootstrap
+
+      - name: Initialize pmbootstrap
+        run: |
+          # This command forces the download of the device files
+          pmbootstrap init --device samsung-j7elte --ui xfce4 --work /home/runner/workdir --mirror-alpine http://dl-cdn.alpinelinux.org/alpine/ --mirror-pmOS http://mirror.postmarketos.org/postmarketos/ --jobs 4 --owner runner --confirm-checksum
+
+      - name: Build Recovery Zip
+        run: |
+          # We use --no-fde to save RAM/Time since you want a server
+          pmbootstrap install --android-recovery-zip --no-fde
+
+      - name: Export Zip
         run: pmbootstrap export
-      - name: Upload OS
+
+      - name: Upload Finished OS
         uses: actions/upload-artifact@v4
         with:
-          name: postmarketOS-J7-XFCE
+          name: postmarketOS-J7-Final
           path: /tmp/postmarketOS-export/*.zip
