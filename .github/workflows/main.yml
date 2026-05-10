@@ -1,4 +1,4 @@
-name: Build postmarketOS J7 v3-Fixed
+name: Build postmarketOS J7 v4
 on: [workflow_dispatch]
 jobs:
   build:
@@ -16,23 +16,28 @@ jobs:
           ln -s "$PWD/pmbootstrap/pmbootstrap.py" ~/.local/bin/pmbootstrap
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Automated Configuration
+      - name: Smart Initialization
         run: |
-          # 1. Answer the first question (Workdir) and then spam 'Enter' for everything else
-          printf "/home/runner/workdir\n" | yes '' | pmbootstrap init
-          
-          # 2. Manually inject the correct J7 settings (This bypasses all questions)
+          # This provides the answers to the prompts in order:
+          # 1. Work path
+          # 2. Channel (edge)
+          # 3. Vendor (samsung)
+          # 4. Device (j7elte)
+          # 5. Confirm testing (y)
+          # 6. UI (xfce4)
+          # 7. Rest are default Enters
+          printf "/home/runner/workdir\nedge\nsamsung\nj7elte\ny\nxfce4\n\n\n\n\n\n\n\n\n\n\n\n" | pmbootstrap init
+
+      - name: Pull and Prepare
+        run: |
+          pmbootstrap pull
+          # We force the UI and Device again just in case init skipped them
           pmbootstrap config device samsung-j7elte
           pmbootstrap config ui xfce4
-          pmbootstrap config channel edge
-          pmbootstrap config mirror_alpine http://dl-cdn.alpinelinux.org/alpine/
-          
-          # 3. Download the device files for the J7
-          pmbootstrap pull
 
       - name: Build Android Recovery Zip
         run: |
-          # This builds the OS for TWRP
+          # This is the long part (15-20 mins)
           pmbootstrap install --android-recovery-zip --no-fde --assume-yes
 
       - name: Export and Upload
