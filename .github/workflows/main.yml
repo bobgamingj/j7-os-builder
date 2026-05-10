@@ -12,10 +12,15 @@ jobs:
       PMB_EXPECT_NO_PROMPTS: "1"
 
     steps:
+      ####################################################################
+      # Install dependencies
+      ####################################################################
       - name: Install dependencies
         run: |
           set -euxo pipefail
+
           sudo apt update
+
           sudo apt install -y \
             git \
             python3 \
@@ -27,156 +32,174 @@ jobs:
             rsync \
             sudo
 
+      ####################################################################
+      # Create swap
+      ####################################################################
       - name: Create swap memory
         run: |
           set -euxo pipefail
+
           sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=8192
+
           sudo chmod 600 /mnt/swapfile
+
           sudo mkswap /mnt/swapfile
+
           sudo swapon /mnt/swapfile
-          swapon --show
+
           free -h
 
+      ####################################################################
+      # Clone pmbootstrap
+      ####################################################################
       - name: Clone pmbootstrap
         run: |
           set -euxo pipefail
-          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
+          git clone --depth=1 \
+            https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+
+      ####################################################################
+      # Install pmbootstrap
+      ####################################################################
       - name: Install pmbootstrap
         run: |
           set -euxo pipefail
+
           python3 -m venv ~/venv
+
           source ~/venv/bin/activate
+
           pip install --upgrade pip setuptools wheel
+
           pip install tomli pexpect
+
           pip install ./pmbootstrap
+
           echo "$HOME/venv/bin" >> $GITHUB_PATH
 
+      ####################################################################
+      # Initialize pmbootstrap
+      ####################################################################
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
+
           source ~/venv/bin/activate
 
           rm -rf ~/.config/pmbootstrap.cfg
-          mkdir -p ~/pmos
+          rm -rf ~/.local/var/pmbootstrap
 
           python3 <<'PY'
-          import os
-          import sys
           import pexpect
-
-          work = os.path.expanduser("~/pmos")
+          import sys
 
           child = pexpect.spawn(
-              f"pmbootstrap -y -w {work} init",
+              "pmbootstrap init",
               encoding="utf-8",
-              timeout=900,
+              timeout=1200
           )
+
           child.logfile = sys.stdout
 
-          answers = {
-              "work": work,
-              "channel": "edge",
-              "device": "samsung-j7elte",
-              "kernel": "downstream",
-              "ui": "xfce4",
-              "hostname": "pmos-j7",
-              "user": "postmarket",
-              "locale": "en_US.UTF-8",
-              "timezone": "UTC",
-              "keymap": "us",
-          }
-
           while True:
-              idx = child.expect([
-                  r"(?i)work.*path",
-                  r"(?i)release channel",
-                  r"(?i)device.*kernel|vendor.*model.*kernel|codename",
-                  r"(?i)which kernel|kernel.*use",
-                  r"(?i)which ui|select ui|ui",
-                  r"(?i)hostname",
-                  r"(?i)username|user name",
-                  r"(?i)locale",
-                  r"(?i)timezone",
-                  r"(?i)keymap",
-                  r"(?i)systemd",
-                  r"(?i)ssh",
-                  r"(?i)mirror",
-                  r"(?i)provider",
-                  r"(?i)continue|confirm|yes/no|\\[y/n\\]",
+              i = child.expect([
+                  r"Work path",
+                  r"Choose a channel",
+                  r"Vendor",
+                  r"Device codename",
+                  r"Kernel",
+                  r"User interface",
+                  r"Username",
+                  r"Password",
+                  r"Timezone",
+                  r"Device hostname",
+                  r"Continue",
+                  r"Install",
+                  r"WARNING",
+                  r"\[y/N\]",
                   pexpect.EOF,
-                  pexpect.TIMEOUT,
+                  pexpect.TIMEOUT
               ])
 
-              if idx == 0:
-                  child.sendline(answers["work"])
-              elif idx == 1:
-                  child.sendline(answers["channel"])
-              elif idx == 2:
-                  child.sendline(answers["device"])
-              elif idx == 3:
-                  child.sendline(answers["kernel"])
-              elif idx == 4:
-                  child.sendline(answers["ui"])
-              elif idx == 5:
-                  child.sendline(answers["hostname"])
-              elif idx == 6:
-                  child.sendline(answers["user"])
-              elif idx == 7:
-                  child.sendline(answers["locale"])
-              elif idx == 8:
-                  child.sendline(answers["timezone"])
-              elif idx == 9:
-                  child.sendline(answers["keymap"])
-              elif idx == 10:
+              if i == 0:
                   child.sendline("")
-              elif idx == 11:
-                  child.sendline("")
-              elif idx == 12:
-                  child.sendline("")
-              elif idx == 13:
-                  child.sendline("")
-              elif idx == 14:
+              elif i == 1:
+                  child.sendline("edge")
+              elif i == 2:
+                  child.sendline("samsung")
+              elif i == 3:
+                  child.sendline("j7elte")
+              elif i == 4:
+                  child.sendline("downstream")
+              elif i == 5:
+                  child.sendline("xfce4")
+              elif i == 6:
+                  child.sendline("postmarket")
+              elif i == 7:
+                  child.sendline("postmarket")
+              elif i == 8:
+                  child.sendline("UTC")
+              elif i == 9:
+                  child.sendline("pmos-j7")
+              elif i in [10,11,12,13]:
                   child.sendline("y")
-              elif idx == 15:
+              elif i == 14:
                   break
               else:
-                  print("Timed out waiting for pmbootstrap prompt", file=sys.stderr)
+                  print("TIMEOUT")
                   sys.exit(1)
 
           child.close()
-          if child.exitstatus not in (0, None):
-              sys.exit(child.exitstatus or 1)
+
+          if child.exitstatus not in [0, None]:
+              sys.exit(child.exitstatus)
           PY
 
-          pmbootstrap -y -w "$HOME/pmos" config device samsung-j7elte
-          pmbootstrap -y -w "$HOME/pmos" config kernel downstream
-          pmbootstrap -y -w "$HOME/pmos" config ui xfce4
-          pmbootstrap -y -w "$HOME/pmos" config hostname pmos-j7
-          pmbootstrap -y -w "$HOME/pmos" config user postmarket
-          pmbootstrap -y -w "$HOME/pmos" config locale en_US.UTF-8
-          pmbootstrap -y -w "$HOME/pmos" config timezone UTC
-          pmbootstrap -y -w "$HOME/pmos" config keymap us
-          pmbootstrap -y -w "$HOME/pmos" status
-
+      ####################################################################
+      # Pull packages
+      ####################################################################
       - name: Pull packages
         run: |
           set -euxo pipefail
-          pmbootstrap -y -w "$HOME/pmos" pull
 
+          source ~/venv/bin/activate
+
+          pmbootstrap pull
+
+      ####################################################################
+      # Build image
+      ####################################################################
       - name: Build Android recovery zip
         run: |
           set -euxo pipefail
-          pmbootstrap -y -w "$HOME/pmos" install --android-recovery-zip --no-fde
 
+          source ~/venv/bin/activate
+
+          pmbootstrap install \
+            --android-recovery-zip \
+            --no-fde
+
+      ####################################################################
+      # Export image
+      ####################################################################
       - name: Export image
         run: |
           set -euxo pipefail
+
+          source ~/venv/bin/activate
+
           mkdir -p output
-          pmbootstrap -y -w "$HOME/pmos" export
+
+          pmbootstrap export
+
           cp -rv /tmp/postmarketOS-export/* output/ || true
+
           ls -lah output
 
+      ####################################################################
+      # Upload image
+      ####################################################################
       - name: Upload image
         uses: actions/upload-artifact@v4
         with:
