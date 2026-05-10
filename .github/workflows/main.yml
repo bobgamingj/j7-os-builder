@@ -48,48 +48,132 @@ jobs:
           python3 -m venv ~/venv
           source ~/venv/bin/activate
           pip install --upgrade pip setuptools wheel
-          pip install tomli
+          pip install tomli pexpect
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> $GITHUB_PATH
 
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
+          source ~/venv/bin/activate
+
           rm -rf ~/.config/pmbootstrap.cfg
           mkdir -p ~/pmos
-          yes '' | pmbootstrap -w "$HOME/pmos" init -y
 
-      - name: Set device configuration
-        run: |
-          set -euxo pipefail
-          pmbootstrap -w "$HOME/pmos" config device samsung-j7elte
-          pmbootstrap -w "$HOME/pmos" config kernel downstream
-          pmbootstrap -w "$HOME/pmos" config ui xfce4
-          pmbootstrap -w "$HOME/pmos" config hostname pmos-j7
-          pmbootstrap -w "$HOME/pmos" config user postmarket
-          pmbootstrap -w "$HOME/pmos" config locale en_US.UTF-8
-          pmbootstrap -w "$HOME/pmos" config timezone UTC
-          pmbootstrap -w "$HOME/pmos" config keymap us
-          pmbootstrap -w "$HOME/pmos" status
+          python3 <<'PY'
+          import os
+          import sys
+          import pexpect
+
+          work = os.path.expanduser("~/pmos")
+
+          child = pexpect.spawn(
+              f"pmbootstrap -y -w {work} init",
+              encoding="utf-8",
+              timeout=900,
+          )
+          child.logfile = sys.stdout
+
+          answers = {
+              "work": work,
+              "channel": "edge",
+              "device": "samsung-j7elte",
+              "kernel": "downstream",
+              "ui": "xfce4",
+              "hostname": "pmos-j7",
+              "user": "postmarket",
+              "locale": "en_US.UTF-8",
+              "timezone": "UTC",
+              "keymap": "us",
+          }
+
+          while True:
+              idx = child.expect([
+                  r"(?i)work.*path",
+                  r"(?i)release channel",
+                  r"(?i)device.*kernel|vendor.*model.*kernel|codename",
+                  r"(?i)which kernel|kernel.*use",
+                  r"(?i)which ui|select ui|ui",
+                  r"(?i)hostname",
+                  r"(?i)username|user name",
+                  r"(?i)locale",
+                  r"(?i)timezone",
+                  r"(?i)keymap",
+                  r"(?i)systemd",
+                  r"(?i)ssh",
+                  r"(?i)mirror",
+                  r"(?i)provider",
+                  r"(?i)continue|confirm|yes/no|\\[y/n\\]",
+                  pexpect.EOF,
+                  pexpect.TIMEOUT,
+              ])
+
+              if idx == 0:
+                  child.sendline(answers["work"])
+              elif idx == 1:
+                  child.sendline(answers["channel"])
+              elif idx == 2:
+                  child.sendline(answers["device"])
+              elif idx == 3:
+                  child.sendline(answers["kernel"])
+              elif idx == 4:
+                  child.sendline(answers["ui"])
+              elif idx == 5:
+                  child.sendline(answers["hostname"])
+              elif idx == 6:
+                  child.sendline(answers["user"])
+              elif idx == 7:
+                  child.sendline(answers["locale"])
+              elif idx == 8:
+                  child.sendline(answers["timezone"])
+              elif idx == 9:
+                  child.sendline(answers["keymap"])
+              elif idx == 10:
+                  child.sendline("")
+              elif idx == 11:
+                  child.sendline("")
+              elif idx == 12:
+                  child.sendline("")
+              elif idx == 13:
+                  child.sendline("")
+              elif idx == 14:
+                  child.sendline("y")
+              elif idx == 15:
+                  break
+              else:
+                  print("Timed out waiting for pmbootstrap prompt", file=sys.stderr)
+                  sys.exit(1)
+
+          child.close()
+          if child.exitstatus not in (0, None):
+              sys.exit(child.exitstatus or 1)
+          PY
+
+          pmbootstrap -y -w "$HOME/pmos" config device samsung-j7elte
+          pmbootstrap -y -w "$HOME/pmos" config kernel downstream
+          pmbootstrap -y -w "$HOME/pmos" config ui xfce4
+          pmbootstrap -y -w "$HOME/pmos" config hostname pmos-j7
+          pmbootstrap -y -w "$HOME/pmos" config user postmarket
+          pmbootstrap -y -w "$HOME/pmos" config locale en_US.UTF-8
+          pmbootstrap -y -w "$HOME/pmos" config timezone UTC
+          pmbootstrap -y -w "$HOME/pmos" config keymap us
+          pmbootstrap -y -w "$HOME/pmos" status
 
       - name: Pull packages
         run: |
           set -euxo pipefail
-          pmbootstrap -w "$HOME/pmos" pull
+          pmbootstrap -y -w "$HOME/pmos" pull
 
       - name: Build Android recovery zip
         run: |
           set -euxo pipefail
-          pmbootstrap -w "$HOME/pmos" install \
-            --android-recovery-zip \
-            --no-fde \
-            --password postmarket
+          pmbootstrap -y -w "$HOME/pmos" install --android-recovery-zip --no-fde
 
       - name: Export image
         run: |
           set -euxo pipefail
           mkdir -p output
-          pmbootstrap -w "$HOME/pmos" export
+          pmbootstrap -y -w "$HOME/pmos" export
           cp -rv /tmp/postmarketOS-export/* output/ || true
           ls -lah output
 
