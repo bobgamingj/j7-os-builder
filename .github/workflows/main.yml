@@ -16,33 +16,36 @@ jobs:
           ln -s "$PWD/pmbootstrap/pmbootstrap.py" ~/.local/bin/pmbootstrap
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Setup Virtual Memory
+        run: |
+          # J7 kernel needs extra memory to compile
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
       - name: Forced Initialization
         run: |
-          # 1. Clean up any old broken configs
           rm -rf ~/.config/pmbootstrap.cfg
-          
-          # 2. We provide the Workdir and Channel, then let 'yes' handle the other 20+ questions
-          # This accepts all defaults for things like Timezone and Locale
+          # We use 'yes' to hit Enter for every question
           printf "/home/runner/workdir\nedge\n" | yes '' | pmbootstrap init
           
-          # 3. Now we OVERRIDE the defaults with the specific Samsung J7 hardware settings
+          # Inject your specific J7 hardware settings
           pmbootstrap config device samsung-j7elte
           pmbootstrap config ui xfce4
-          
-          # 4. Download the actual Samsung code
           pmbootstrap pull
 
       - name: Build Android Recovery Zip
         run: |
-          # The 'zap' ensures the environment is fresh before starting the big build
           pmbootstrap zap -m
-          pmbootstrap install --android-recovery-zip --no-fde --assume-yes
+          # PMB_EXPECT_NO_PROMPTS=1 replaces --assume-yes in new versions
+          export PMB_EXPECT_NO_PROMPTS=1
+          pmbootstrap install --android-recovery-zip --no-fde
 
       - name: Export and Upload
         run: |
           pmbootstrap export
           mkdir -p output
-          # -L ensures we get the real file, not a shortcut
           cp -L /tmp/postmarketOS-export/*.zip output/
 
       - name: Upload Finished OS
