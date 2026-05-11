@@ -46,42 +46,33 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Create Config and Link Aports
+      - name: Initialize pmbootstrap (3.10.1 Format)
         run: |
-          # 1. Create the directory structure pmbootstrap expects
-          mkdir -p "$PMOS_WORKDIR/cache_git"
-          mkdir -p ~/.config
-          
-          # 2. Link your cloned aports to the internal cache location to prevent "dir not found"
-          ln -s "$PMOS_APORTS" "$PMOS_WORKDIR/cache_git/pmaports"
-          
-          # 3. Create config with forced absolute paths
-          cat <<EOF > ~/.config/pmbootstrap.cfg
-          [pmbootstrap]
-          aports = $PMOS_APORTS
-          work = $PMOS_WORKDIR
-          jobs = 2
-          mirror_alpine = http://dl-cdn.alpinelinux.org/alpine/
-          mirror_postmarketos = http://mirror.postmarketos.org/postmarketos/
-          channel = edge
-          device = samsung-j7elte
-          ui = xfce4
-          user = postmarket
-          hostname = pmos-j7
-          build_pkgs_on_install = False
-          systemd = False
-          EOF
-          
           source ~/venv/bin/activate
-          pmbootstrap status
+          # This provides the exact sequence of answers for the 3.10.1 wizard
+          # 1. Work path, 2. Aports path, 3. Channel (edge), 4. Vendor (samsung), 
+          # 5. Device (j7elte), 6. UI (xfce4), 7. User, 8. Hostname, 9. Additional Options
+          pmbootstrap init <<EOF
+          $PMOS_WORKDIR
+          $PMOS_APORTS
+          edge
+          samsung
+          j7elte
+          xfce4
+          postmarket
+          pmos-j7
+          n
+          EOF
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
           # Mandatory zram-init for J7's 1.5GB RAM
+          # Force systemd=False via the install flag for the legacy 3.10 kernel
           pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
+            --no-systemd \
             --password "postmarket"
 
       - name: Export and Collect
