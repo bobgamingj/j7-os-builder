@@ -20,20 +20,20 @@ jobs:
             ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
             python3-tomli openssl kpartx
 
-      - name: Fix Swap Space
+      - name: Create Clean Swap Space
         run: |
-          # Disable any existing swap to avoid "Text file busy" error
+          # Disable existing swap to prevent "Text file busy" error
           sudo swapoff -a || true
-          sudo rm -f /mnt/pmos_swap
-          sudo fallocate -l 12G /mnt/pmos_swap
-          sudo chmod 600 /mnt/pmos_swap
-          sudo mkswap /mnt/pmos_swap
-          sudo swapon /mnt/pmos_swap
+          sudo rm -f /swapfile
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
 
       - name: Clone pmbootstrap and pmaports
         run: |
           git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-          # pmaports branch "edge" is now "main" in 2026
+          # Using 'main' branch as 'edge' is now the default target
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
       - name: Setup Python Environment
@@ -45,10 +45,10 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (Fixed 3.10.1 Wizard)
+      - name: Initialize pmbootstrap (Fixed 3.10.1 Sequence)
         run: |
           source ~/venv/bin/activate
-          # This sequence answers the 3.10.1 prompts exactly, including the 'y' for the J7 downstream warning
+          # This updated sequence includes 'pulseaudio' to satisfy the new 3.10.1 prompt
           pmbootstrap init <<EOF
           $PMOS_WORKDIR
           $PMOS_APORTS
@@ -56,20 +56,21 @@ jobs:
           samsung
           j7elte
           y
+          pulseaudio
           xfce4
           postmarket
           pmos-j7
           n
           EOF
           
-          # Force legacy boot configuration for the J7's 3.10 kernel
+          # Force OpenRC (no-systemd) because the J7's 3.10 kernel cannot run systemd
           pmbootstrap config systemd False
           pmbootstrap status
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # zram-init is required for the J7's 1.5GB RAM limit
+          # zram-init is mandatory for J7's 1.5GB RAM to prevent OOM crashes
           pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
