@@ -21,11 +21,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git python3 python3-pip python3-venv build-essential \
             ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
-            python3-tomli  # FIX: System-level requirement for pmbootstrap
+            python3-tomli kpartx openssl
 
       - name: Create Clean Swap Space
         run: |
-          # Use a fresh mount point to avoid 'Text file busy' locks
           sudo swapoff -a || true
           SWAPFILE=/mnt/pmos_build_swap
           sudo rm -f "$SWAPFILE"
@@ -39,7 +38,7 @@ jobs:
 
       - name: Clone pmaports
         run: |
-          # FIX: The branch is 'main' for the current rolling release
+          # FIX: Branch is now 'main'
           rm -rf "$PMOS_APORTS"
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
@@ -48,17 +47,16 @@ jobs:
           python3 -m venv ~/venv
           source ~/venv/bin/activate
           pip install --upgrade pip setuptools wheel
-          pip install tomli  # FIX: Ensures 'tomli' is present in the isolated environment
+          pip install tomli
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap
+      - name: Initialize pmbootstrap (Non-Interactive)
         run: |
           source ~/venv/bin/activate
-          # Force clean config to avoid interactive "overwrite?" prompts
           rm -rf ~/.config/pmbootstrap.cfg
           
-          # Automated initialization for j7elte (SM-J700F)
+          # FIX: Precise heredoc for j7elte. No extra blank lines.
           pmbootstrap -y -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
           edge
           samsung
@@ -75,9 +73,9 @@ jobs:
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Adding zram-init for RAM management and nodejs for your n8n mini-pc
+          # Pre-installing nodejs/npm for n8n/AI use case
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
-            --add "zram-init,nodejs,npm,sudo,networkmanager" \
+            --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
             --password "$PMOS_PASSWORD"
 
@@ -86,13 +84,12 @@ jobs:
           mkdir -p output
           source ~/venv/bin/activate
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" export
-          # Copy zip from temp export location
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
           ls -lah output
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-xfce-mini-pc
+          name: pmos-j7-xfce-final
           path: output/
           if-no-files-found: error
