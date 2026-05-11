@@ -9,9 +9,10 @@ jobs:
     timeout-minutes: 360
 
     env:
-      PMB_EXPECT_NO_PROMPTS: "1"
+      PMB_FORCE_NONINTERACTIVE: "1"
 
     steps:
+
       ####################################################################
       # Install dependencies
       ####################################################################
@@ -19,18 +20,21 @@ jobs:
         run: |
           set -euxo pipefail
 
-          sudo apt update
+          sudo apt-get update
 
-          sudo apt install -y \
+          sudo apt-get install -y \
             git \
             python3 \
             python3-pip \
             python3-venv \
             build-essential \
+            ca-certificates \
             zip \
             unzip \
             rsync \
-            sudo
+            sudo \
+            qemu-user-static \
+            binfmt-support
 
       ####################################################################
       # Create swap
@@ -39,13 +43,12 @@ jobs:
         run: |
           set -euxo pipefail
 
-          sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=8192
+          sudo fallocate -l 8G /swapfile || \
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
 
-          sudo chmod 600 /mnt/swapfile
-
-          sudo mkswap /mnt/swapfile
-
-          sudo swapon /mnt/swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
 
           free -h
 
@@ -72,11 +75,9 @@ jobs:
 
           pip install --upgrade pip setuptools wheel
 
-          pip install tomli pexpect
-
           pip install ./pmbootstrap
 
-          echo "$HOME/venv/bin" >> $GITHUB_PATH
+          echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
       ####################################################################
       # Initialize pmbootstrap
@@ -97,57 +98,102 @@ jobs:
           child = pexpect.spawn(
               "pmbootstrap init",
               encoding="utf-8",
-              timeout=1200
+              timeout=1800
           )
 
           child.logfile = sys.stdout
 
-          while True:
-              i = child.expect([
-                  r"Work path",
-                  r"Choose a channel",
-                  r"Vendor",
-                  r"Device codename",
-                  r"Kernel",
-                  r"User interface",
-                  r"Username",
-                  r"Password",
-                  r"Timezone",
-                  r"Device hostname",
-                  r"Continue",
-                  r"Install",
-                  r"WARNING",
-                  r"\[y/N\]",
-                  pexpect.EOF,
-                  pexpect.TIMEOUT
-              ])
+          prompts = [
+              r"Work path",
+              r"pmaports path",
+              r"Choose a channel",
+              r"Vendor",
+              r"Device codename",
+              r"Kernel",
+              r"User interface",
+              r"Username",
+              r"Password",
+              r"Timezone",
+              r"Device hostname",
+              r"Enable.*SSH",
+              r"User interface.*",
+              r"extra free space",
+              r"\[Y/n\]",
+              r"\[y/N\]",
+              pexpect.EOF,
+              pexpect.TIMEOUT
+          ]
 
+          while True:
+              i = child.expect(prompts)
+
+              # Work path
               if i == 0:
                   child.sendline("")
+
+              # pmaports path
               elif i == 1:
-                  child.sendline("edge")
+                  child.sendline("")
+
+              # Channel
               elif i == 2:
-                  child.sendline("samsung")
+                  child.sendline("edge")
+
+              # Vendor
               elif i == 3:
-                  child.sendline("j7elte")
+                  child.sendline("samsung")
+
+              # Device codename
               elif i == 4:
-                  child.sendline("downstream")
+                  child.sendline("j7elte")
+
+              # Kernel
               elif i == 5:
-                  child.sendline("xfce4")
+                  child.sendline("downstream")
+
+              # UI
               elif i == 6:
-                  child.sendline("postmarket")
+                  child.sendline("xfce4")
+
+              # Username
               elif i == 7:
                   child.sendline("postmarket")
+
+              # Password
               elif i == 8:
-                  child.sendline("UTC")
+                  child.sendline("postmarket")
+
+              # Timezone
               elif i == 9:
+                  child.sendline("UTC")
+
+              # Hostname
+              elif i == 10:
                   child.sendline("pmos-j7")
-              elif i in [10,11,12,13]:
+
+              # SSH
+              elif i == 11:
+                  child.sendline("none")
+
+              # UI confirmation
+              elif i == 12:
                   child.sendline("y")
-              elif i == 14:
+
+              # Extra space
+              elif i == 13:
+                  child.sendline("0")
+
+              # Yes prompts
+              elif i in [14, 15]:
+                  child.sendline("y")
+
+              # EOF
+              elif i == 16:
                   break
+
+              # TIMEOUT
               else:
-                  print("TIMEOUT")
+                  print("ERROR: pmbootstrap init timed out")
                   sys.exit(1)
 
           child.close()
@@ -176,7 +222,7 @@ jobs:
 
           source ~/venv/bin/activate
 
-          pmbootstrap install \
+          yes "" | pmbootstrap install \
             --android-recovery-zip \
             --no-fde
 
@@ -191,18 +237,21 @@ jobs:
 
           mkdir -p output
 
-          pmbootstrap export
+          pmbootstrap export || true
 
-          cp -rv /tmp/postmarketOS-export/* output/ || true
+          find ~/.local/var/pmbootstrap/chroot_native/home/pmos/root \
+            -type f \
+            \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
+            -exec cp -v {} output/ \; || true
 
           ls -lah output
 
       ####################################################################
-      # Upload image
+      # Upload artifacts
       ####################################################################
       - name: Upload image
         uses: actions/upload-artifact@v4
         with:
           name: postmarketOS-J7
-          path: output/*
+          path: output/
           if-no-files-found: error
