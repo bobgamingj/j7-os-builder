@@ -24,17 +24,20 @@ jobs:
 
       - name: Create swap memory
         run: |
-          sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # Use a unique filename to avoid "Text file busy" errors
+          SWAP_PATH="/mnt/pmos_build_swap"
+          sudo swapoff -a || true
+          sudo fallocate -l 8G "$SWAP_PATH" || sudo dd if=/dev/zero of="$SWAP_PATH" bs=1M count=8192
+          sudo chmod 600 "$SWAP_PATH"
+          sudo mkswap "$SWAP_PATH"
+          sudo swapon "$SWAP_PATH"
 
       - name: Clone pmbootstrap
         run: git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
       - name: Clone pmaports
         run: |
-          # FIXED: Branch name is 'master' for stable/edge development
+          # FIXED: Branch name is 'master' (not edge)
           git clone --depth=1 --branch master https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
       - name: Install pmbootstrap
@@ -47,7 +50,7 @@ jobs:
       - name: Initialize pmbootstrap
         run: |
           source ~/venv/bin/activate
-          # Automated init for j7elte with XFCE4
+          # Automated init for j7elte with XFCE
           pmbootstrap -y -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
           edge
           samsung
@@ -64,9 +67,9 @@ jobs:
       - name: Build Android recovery zip
         run: |
           source ~/venv/bin/activate
-          # We add extra packages you need for your Mini PC setup
+          # Pre-installing nodejs for your n8n mini-pc needs
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
-            --add "nodejs,npm,python3,zram-init,networkmanager,sudo" \
+            --add "nodejs,npm,zram-init" \
             --android-recovery-zip \
             --password "$PMOS_PASSWORD"
 
@@ -81,5 +84,5 @@ jobs:
       - name: Upload zip
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-xfce-recovery
+          name: pmos-j7-xfce-package
           path: output/
