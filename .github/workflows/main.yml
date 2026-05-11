@@ -8,6 +8,13 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
+    env:
+      PMOS_WORKDIR: /home/runner/pmos-work
+      PMOS_APORTS: /home/runner/pmaports
+      PMOS_USER: postmarket
+      PMOS_PASSWORD: postmarket
+      PMOS_HOSTNAME: pmos-j7
+
     steps:
       - name: Install dependencies
         run: |
@@ -55,12 +62,8 @@ jobs:
           python3 -m venv ~/venv
           source ~/venv/bin/activate
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pexpect tomli
+          python -m pip install tomli
           python -m pip install ./pmbootstrap
-          python - <<'PY'
-          import pexpect, tomli
-          print("Python dependencies OK")
-          PY
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
       - name: Initialize pmbootstrap
@@ -68,101 +71,80 @@ jobs:
           set -euxo pipefail
           source ~/venv/bin/activate
 
-          rm -rf ~/.config/pmbootstrap.cfg
-          rm -rf ~/.local/var/pmbootstrap
+          rm -rf "$PMOS_WORKDIR"
+          rm -rf "$PMOS_APORTS"
+          mkdir -p "$PMOS_APORTS"
 
-          python3 <<'PY'
-          import pexpect
+          python3 - <<'PY'
+          import os
+          import subprocess
           import sys
 
-          child = pexpect.spawn(
-              "pmbootstrap init",
-              encoding="utf-8",
-              timeout=1800
-          )
-          child.logfile = sys.stdout
+          workdir = os.environ["PMOS_WORKDIR"]
+          aports = os.environ["PMOS_APORTS"]
 
-          while True:
-              i = child.expect([
-                  r"Work path",
-                  r"pmaports path",
-                  r"Choose a channel",
-                  r"Vendor",
-                  r"Device codename",
-                  r"Kernel",
-                  r"User interface",
-                  r"Username",
-                  r"Password",
-                  r"Timezone",
-                  r"Device hostname",
-                  r"Enable.*SSH",
-                  r"extra free space",
-                  r"\[Y/n\]",
-                  r"\[y/N\]",
-                  pexpect.EOF,
-                  pexpect.TIMEOUT
-              ])
+          # Answers for the remaining interactive prompts.
+          # Work path and pmaports path are passed via CLI, so they are not needed here.
+          answers = "\n".join([
+              "edge",
+              "samsung",
+              "j7elte",
+              "downstream",
+              "xfce4",
+              os.environ["PMOS_USER"],
+              os.environ["PMOS_PASSWORD"],
+              "UTC",
+              os.environ["PMOS_HOSTNAME"],
+              "",
+              "",
+              "",
+          ]) + "\n"
 
-              if i in [0, 1]:
-                  child.sendline("")
-              elif i == 2:
-                  child.sendline("edge")
-              elif i == 3:
-                  child.sendline("samsung")
-              elif i == 4:
-                  child.sendline("j7elte")
-              elif i == 5:
-                  child.sendline("downstream")
-              elif i == 6:
-                  child.sendline("xfce4")
-              elif i == 7:
-                  child.sendline("postmarket")
-              elif i == 8:
-                  child.sendline("postmarket")
-              elif i == 9:
-                  child.sendline("UTC")
-              elif i == 10:
-                  child.sendline("pmos-j7")
-              elif i == 11:
-                  child.sendline("none")
-              elif i == 12:
-                  child.sendline("0")
-              elif i in [13, 14]:
-                  child.sendline("y")
-              elif i == 15:
-                  break
-              else:
-                  print("ERROR: pmbootstrap init timed out")
-                  sys.exit(1)
+          cmd = [
+              "pmbootstrap",
+              "-y",
+              "-t",
+              "3600",
+              "-w",
+              workdir,
+              "-p",
+              aports,
+              "-E",
+              "0",
+              "-B",
+              "128",
+              "init",
+              "--shallow-initial-clone",
+          ]
 
-          child.close()
-
-          if child.exitstatus not in [0, None]:
-              sys.exit(child.exitstatus)
+          proc = subprocess.run(cmd, input=answers, text=True)
+          sys.exit(proc.returncode)
           PY
 
       - name: Pull packages
         run: |
           set -euxo pipefail
           source ~/venv/bin/activate
-          pmbootstrap pull
+          pmbootstrap -t 3600 -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" pull
 
       - name: Build Android recovery zip
         run: |
           set -euxo pipefail
           source ~/venv/bin/activate
-          yes "" | pmbootstrap install --android-recovery-zip --no-fde
+          pmbootstrap -t 3600 -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
+            --android-recovery-zip \
+            --no-fde \
+            --no-sshd \
+            --no-firewall \
+            --password "$PMOS_PASSWORD"
 
-      - name: Export image
+      - name: Collect artifacts
         run: |
           set -euxo pipefail
-          source ~/venv/bin/activate
-
           mkdir -p output
 
-          pmbootstrap export || true
-
-          find ~/.local/var/pmbootstrap -type f \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp -v {} output/ \; || true
+          find "$PMOS_WORKDIR" -type f \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
+            -exec cp -v {} output/ \; || true
 
           ls -lah output
 
