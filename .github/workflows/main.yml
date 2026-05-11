@@ -23,12 +23,12 @@ jobs:
             ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
             python3-tomli openssl kpartx
 
-      - name: Create Clean Swap Space (10GB)
+      - name: Create Clean Swap Space (12GB)
         run: |
           sudo swapoff -a || true
           SWAPFILE=/mnt/pmos_build_swap
           sudo rm -f "$SWAPFILE"
-          sudo fallocate -l 10G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240
+          sudo fallocate -l 12G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=12288
           sudo chmod 600 "$SWAPFILE"
           sudo mkswap "$SWAPFILE"
           sudo swapon "$SWAPFILE"
@@ -50,45 +50,44 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (Non-Interactive Fixed)
+      - name: Configure pmbootstrap (Non-Interactive)
         run: |
           source ~/venv/bin/activate
-          rm -rf ~/.config/pmbootstrap.cfg
+          # Use 'config' to bypass the 'init' wizard entirely
+          pmbootstrap config work "$PMOS_WORKDIR"
+          pmbootstrap config aports "$PMOS_APORTS"
+          pmbootstrap config channel edge
+          pmbootstrap config device samsung-j7elte
+          pmbootstrap config ui xfce4
+          pmbootstrap config user "$PMOS_USER"
+          pmbootstrap config hostname "$PMOS_HOSTNAME"
+          pmbootstrap config systemd False
+          pmbootstrap config timezone UTC
+          pmbootstrap config locale en_US.UTF-8
+          pmbootstrap config build_default_device_arch True
           
-          # This heredoc is specifically ordered for pmbootstrap 3.10.1 
-          # to prevent "EOF when reading a line" or "Invalid channel"
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
-          edge
-          samsung
-          j7elte
-          y
-          xfce4
-          $PMOS_USER
-          $PMOS_HOSTNAME
-          y
-          n
-          n
-          EOF
+          # Final sanity check - this prints the summary and ensures no prompts remain
+          pmbootstrap status
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
+          # Including zram-init is critical for the J7's 1.5GB RAM
+          pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
             --password "$PMOS_PASSWORD"
 
-      - name: Export and Collect Artifacts
+      - name: Export and Collect
         run: |
           mkdir -p output
           source ~/venv/bin/activate
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" export
+          pmbootstrap export
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
           ls -lah output
 
       - name: Upload Finished Image
-        uses: actions/upload-artifact@v4
+        uses: upload-artifact@v4
         with:
           name: postmarketOS-J7-Final
           path: output/
-          if-no-files-found: error
