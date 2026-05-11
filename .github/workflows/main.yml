@@ -53,7 +53,7 @@ jobs:
       - name: Configure pmbootstrap (Non-Interactive)
         run: |
           source ~/venv/bin/activate
-          # Use 'config' to bypass the 'init' wizard entirely
+          # Official 2026 configuration method to bypass wizard prompts
           pmbootstrap config work "$PMOS_WORKDIR"
           pmbootstrap config aports "$PMOS_APORTS"
           pmbootstrap config channel edge
@@ -65,14 +65,12 @@ jobs:
           pmbootstrap config timezone UTC
           pmbootstrap config locale en_US.UTF-8
           pmbootstrap config build_default_device_arch True
-          
-          # Final sanity check - this prints the summary and ensures no prompts remain
           pmbootstrap status
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Including zram-init is critical for the J7's 1.5GB RAM
+          # Crucial: zram-init for J7's 1.5GB RAM management
           pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
@@ -87,7 +85,8 @@ jobs:
           ls -lah output
 
       - name: Upload Finished Image
-        uses: upload-artifact@v4
+        uses: actions/upload-artifact@v4 # FIXED: Added 'actions/' prefix
         with:
           name: postmarketOS-J7-Final
           path: output/
+          if-no-files-found: error
