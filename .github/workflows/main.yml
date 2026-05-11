@@ -23,7 +23,7 @@ jobs:
             ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
             python3-tomli openssl kpartx
 
-      - name: Create Clean Swap Space
+      - name: Create Clean Swap Space (10GB)
         run: |
           sudo swapoff -a || true
           SWAPFILE=/mnt/pmos_build_swap
@@ -36,9 +36,8 @@ jobs:
       - name: Clone pmbootstrap
         run: git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
-      - name: Clone pmaports
+      - name: Clone pmaports (Main Branch)
         run: |
-          # The current 2026 development branch is 'main'
           rm -rf "$PMOS_APORTS"
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
@@ -51,12 +50,13 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (Command Line Mode)
+      - name: Initialize pmbootstrap (Safe Flag Mode)
         run: |
           source ~/venv/bin/activate
           rm -rf ~/.config/pmbootstrap.cfg
           
-          # Using flags instead of heredoc to ensure zero interactive errors
+          # CRITICAL FIX: Using explicit flags to bypass interactive prompts entirely.
+          # This avoids the "EOF when reading a line" and "Invalid channel" errors.
           pmbootstrap -y \
             -w "$PMOS_WORKDIR" \
             -p "$PMOS_APORTS" \
@@ -72,23 +72,24 @@ jobs:
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Adding zram-init and nodejs for your Mini-PC/n8n setup
+          # Adding zram-init (essential for 1.5GB RAM) and nodejs for n8n
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
             --password "$PMOS_PASSWORD"
 
-      - name: Export and Collect
+      - name: Export and Collect Artifacts
         run: |
           mkdir -p output
           source ~/venv/bin/activate
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" export
+          # Locate the .zip in the temporary export directory
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
           ls -lah output
 
-      - name: Upload Artifact
+      - name: Upload Finished Image
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-xfce-mini-pc
+          name: postmarketOS-J7-Final
           path: output/
           if-no-files-found: error
