@@ -16,41 +16,49 @@ jobs:
       PMOS_HOSTNAME: pmos-j7
 
     steps:
-      - name: Install dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git python3 python3-pip python3-venv build-essential \
-            ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support
+            ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
+            python3-tomli  # FIX: System-level requirement for pmbootstrap
 
-      - name: Create swap memory
+      - name: Create Clean Swap Space
         run: |
-          # Use a unique filename to avoid "Text file busy" errors
-          SWAP_PATH="/mnt/pmos_build_swap"
+          # Use a fresh mount point to avoid 'Text file busy' locks
           sudo swapoff -a || true
-          sudo fallocate -l 8G "$SWAP_PATH" || sudo dd if=/dev/zero of="$SWAP_PATH" bs=1M count=8192
-          sudo chmod 600 "$SWAP_PATH"
-          sudo mkswap "$SWAP_PATH"
-          sudo swapon "$SWAP_PATH"
+          SWAPFILE=/mnt/pmos_build_swap
+          sudo rm -f "$SWAPFILE"
+          sudo fallocate -l 8G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=8192
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE"
+          sudo swapon "$SWAPFILE"
 
       - name: Clone pmbootstrap
         run: git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
       - name: Clone pmaports
         run: |
-          # FIXED: Branch name is 'master' (not edge)
-          git clone --depth=1 --branch master https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
+          # FIX: The branch is 'main' for the current rolling release
+          rm -rf "$PMOS_APORTS"
+          git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
-      - name: Install pmbootstrap
+      - name: Install pmbootstrap in VENV
         run: |
           python3 -m venv ~/venv
           source ~/venv/bin/activate
-          python -m pip install ./pmbootstrap
+          pip install --upgrade pip setuptools wheel
+          pip install tomli  # FIX: Ensures 'tomli' is present in the isolated environment
+          pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
       - name: Initialize pmbootstrap
         run: |
           source ~/venv/bin/activate
-          # Automated init for j7elte with XFCE
+          # Force clean config to avoid interactive "overwrite?" prompts
+          rm -rf ~/.config/pmbootstrap.cfg
+          
+          # Automated initialization for j7elte (SM-J700F)
           pmbootstrap -y -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
           edge
           samsung
@@ -64,25 +72,27 @@ jobs:
           n
           EOF
 
-      - name: Build Android recovery zip
+      - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Pre-installing nodejs for your n8n mini-pc needs
+          # Adding zram-init for RAM management and nodejs for your n8n mini-pc
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
-            --add "nodejs,npm,zram-init" \
+            --add "zram-init,nodejs,npm,sudo,networkmanager" \
             --android-recovery-zip \
             --password "$PMOS_PASSWORD"
 
-      - name: Collect artifacts
+      - name: Export and Collect
         run: |
           mkdir -p output
           source ~/venv/bin/activate
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" export
+          # Copy zip from temp export location
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
           ls -lah output
 
-      - name: Upload zip
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-xfce-package
+          name: pmos-j7-xfce-mini-pc
           path: output/
+          if-no-files-found: error
