@@ -22,6 +22,7 @@ jobs:
 
       - name: Fix Swap Space
         run: |
+          # Disable any existing swap to avoid "Text file busy" error
           sudo swapoff -a || true
           sudo rm -f /mnt/pmos_swap
           sudo fallocate -l 12G /mnt/pmos_swap
@@ -29,12 +30,10 @@ jobs:
           sudo mkswap /mnt/pmos_swap
           sudo swapon /mnt/pmos_swap
 
-      - name: Clone pmbootstrap
-        run: git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-
-      - name: Clone pmaports (Main Branch)
+      - name: Clone pmbootstrap and pmaports
         run: |
-          rm -rf "$PMOS_APORTS"
+          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          # pmaports branch "edge" is now "main" in 2026
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
       - name: Setup Python Environment
@@ -46,29 +45,31 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (3.10.1 Format)
+      - name: Initialize pmbootstrap (Fixed 3.10.1 Wizard)
         run: |
           source ~/venv/bin/activate
-          # This provides the exact sequence of answers for the 3.10.1 wizard
-          # 1. Work path, 2. Aports path, 3. Channel (edge), 4. Vendor (samsung), 
-          # 5. Device (j7elte), 6. UI (xfce4), 7. User, 8. Hostname, 9. Additional Options
+          # This sequence answers the 3.10.1 prompts exactly, including the 'y' for the J7 downstream warning
           pmbootstrap init <<EOF
           $PMOS_WORKDIR
           $PMOS_APORTS
           edge
           samsung
           j7elte
+          y
           xfce4
           postmarket
           pmos-j7
           n
           EOF
+          
+          # Force legacy boot configuration for the J7's 3.10 kernel
+          pmbootstrap config systemd False
+          pmbootstrap status
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Mandatory zram-init for J7's 1.5GB RAM
-          # Force systemd=False via the install flag for the legacy 3.10 kernel
+          # zram-init is required for the J7's 1.5GB RAM limit
           pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
