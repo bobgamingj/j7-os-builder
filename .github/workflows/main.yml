@@ -21,14 +21,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git python3 python3-pip python3-venv build-essential \
             ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
-            python3-tomli kpartx openssl
+            python3-tomli openssl kpartx
 
       - name: Create Clean Swap Space
         run: |
           sudo swapoff -a || true
           SWAPFILE=/mnt/pmos_build_swap
           sudo rm -f "$SWAPFILE"
-          sudo fallocate -l 8G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=8192
+          sudo fallocate -l 10G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240
           sudo chmod 600 "$SWAPFILE"
           sudo mkswap "$SWAPFILE"
           sudo swapon "$SWAPFILE"
@@ -38,11 +38,11 @@ jobs:
 
       - name: Clone pmaports
         run: |
-          # FIX: Branch is now 'main'
+          # The current 2026 development branch is 'main'
           rm -rf "$PMOS_APORTS"
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
-      - name: Install pmbootstrap in VENV
+      - name: Install pmbootstrap
         run: |
           python3 -m venv ~/venv
           source ~/venv/bin/activate
@@ -51,29 +51,28 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (Non-Interactive)
+      - name: Initialize pmbootstrap (Command Line Mode)
         run: |
           source ~/venv/bin/activate
           rm -rf ~/.config/pmbootstrap.cfg
           
-          # FIX: Precise heredoc for j7elte. No extra blank lines.
-          pmbootstrap -y -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
-          edge
-          samsung
-          j7elte
-          y
-          xfce4
-          $PMOS_USER
-          $PMOS_HOSTNAME
-          y
-          n
-          n
-          EOF
+          # Using flags instead of heredoc to ensure zero interactive errors
+          pmbootstrap -y \
+            -w "$PMOS_WORKDIR" \
+            -p "$PMOS_APORTS" \
+            init \
+            --channel=edge \
+            --vendor=samsung \
+            --device=j7elte \
+            --ui=xfce4 \
+            --user="$PMOS_USER" \
+            --hostname="$PMOS_HOSTNAME" \
+            --no-build-pkgs-on-install
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Pre-installing nodejs/npm for n8n/AI use case
+          # Adding zram-init and nodejs for your Mini-PC/n8n setup
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
@@ -90,6 +89,6 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-xfce-final
+          name: pmos-j7-xfce-mini-pc
           path: output/
           if-no-files-found: error
