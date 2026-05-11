@@ -55,8 +55,12 @@ jobs:
           python3 -m venv ~/venv
           source ~/venv/bin/activate
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pexpect
+          python -m pip install pexpect tomli
           python -m pip install ./pmbootstrap
+          python - <<'PY'
+          import pexpect, tomli
+          print("Python dependencies OK")
+          PY
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
       - name: Initialize pmbootstrap
