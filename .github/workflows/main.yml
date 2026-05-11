@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 360
 
     env:
-      PMOS_WORKDIR: /home/runner/pmos-work
+      PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
       PMOS_APORTS: /home/runner/pmaports
       PMOS_USER: postmarket
       PMOS_PASSWORD: postmarket
@@ -62,7 +62,7 @@ jobs:
           python3 -m venv ~/venv
           source ~/venv/bin/activate
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install tomli
+          python -m pip install pexpect tomli
           python -m pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
@@ -73,52 +73,86 @@ jobs:
 
           rm -rf "$PMOS_WORKDIR"
           rm -rf "$PMOS_APORTS"
-          mkdir -p "$PMOS_APORTS"
 
           python3 - <<'PY'
           import os
-          import subprocess
           import sys
+          import pexpect
 
           workdir = os.environ["PMOS_WORKDIR"]
           aports = os.environ["PMOS_APORTS"]
 
-          # Answers for the remaining interactive prompts.
-          # Work path and pmaports path are passed via CLI, so they are not needed here.
-          answers = "\n".join([
-              "edge",
-              "samsung",
-              "j7elte",
-              "downstream",
-              "xfce4",
-              os.environ["PMOS_USER"],
-              os.environ["PMOS_PASSWORD"],
-              "UTC",
-              os.environ["PMOS_HOSTNAME"],
-              "",
-              "",
-              "",
-          ]) + "\n"
+          child = pexpect.spawn(
+              "pmbootstrap -y -t 3600 -w {} -p {} init --shallow-initial-clone".format(workdir, aports),
+              encoding="utf-8",
+              timeout=1800
+          )
+          child.logfile = sys.stdout
+          child.delaybeforesend = 0.05
 
-          cmd = [
-              "pmbootstrap",
-              "-y",
-              "-t",
-              "3600",
-              "-w",
-              workdir,
-              "-p",
-              aports,
-              "-E",
-              "0",
-              "-B",
-              "128",
-              "init",
-              "--shallow-initial-clone",
-          ]
+          while True:
+              i = child.expect([
+                  r"Work path",
+                  r"pmaports path",
+                  r"Choose a channel",
+                  r"Devices are categorised",
+                  r"Which device do you want",
+                  r"Vendor",
+                  r"Device codename",
+                  r"Which kernel do you want to use",
+                  r"Available kernels",
+                  r"User interface",
+                  r"Username",
+                  r"Password",
+                  r"Timezone",
+                  r"Device hostname",
+                  r"Enable.*SSH",
+                  r"additional options",
+                  r"\[Y/n\]",
+                  r"\[y/N\]",
+                  pexpect.EOF,
+                  pexpect.TIMEOUT
+              ])
 
-          proc = subprocess.run(cmd, input=answers, text=True)
-          sys.exit(proc.returncode)
+              if i in [0, 1]:
+                  child.sendline("")
+              elif i == 2:
+                  child.sendline("edge")
+              elif i == 3:
+                  child.sendline("downstream")
+              elif i == 4:
+                  child.sendline("samsung")
+              elif i == 5:
+                  child.sendline("samsung")
+              elif i == 6:
+                  child.sendline("j7elte")
+              elif i in [7, 8]:
+                  child.sendline("downstream")
+              elif i == 9:
+                  child.sendline("xfce4")
+              elif i == 10:
+                  child.sendline("postmarket")
+              elif i == 11:
+                  child.sendline("postmarket")
+              elif i == 12:
+                  child.sendline("UTC")
+              elif i == 13:
+                  child.sendline("pmos-j7")
+              elif i == 14:
+                  child.sendline("none")
+              elif i == 15:
+                  child.sendline("n")
+              elif i in [16, 17]:
+                  child.sendline("y")
+              elif i == 18:
+                  break
+              else:
+                  print("ERROR: pmbootstrap init timed out")
+                  sys.exit(1)
+
+          child.close()
+          if child.exitstatus not in [0, None]:
+              sys.exit(child.exitstatus)
           PY
 
       - name: Pull packages
