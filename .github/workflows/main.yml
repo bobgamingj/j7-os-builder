@@ -56,6 +56,12 @@ jobs:
           set -euxo pipefail
           git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
+      - name: Clone pmaports
+        run: |
+          set -euxo pipefail
+          rm -rf "$PMOS_APORTS"
+          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
+
       - name: Install pmbootstrap
         run: |
           set -euxo pipefail
@@ -72,7 +78,7 @@ jobs:
           source ~/venv/bin/activate
 
           rm -rf "$PMOS_WORKDIR"
-          rm -rf "$PMOS_APORTS"
+          mkdir -p "$PMOS_WORKDIR"
 
           python3 - <<'PY'
           import os
@@ -83,7 +89,7 @@ jobs:
           aports = os.environ["PMOS_APORTS"]
 
           child = pexpect.spawn(
-              "pmbootstrap -y -t 3600 -w {} -p {} init --shallow-initial-clone".format(workdir, aports),
+              f"pmbootstrap -y -t 3600 -w {workdir} -p {aports} init --shallow-initial-clone",
               encoding="utf-8",
               timeout=1800
           )
@@ -95,21 +101,19 @@ jobs:
                   r"Work path",
                   r"pmaports path",
                   r"Choose a channel",
-                  r"Devices are categorised",
-                  r"Which device do you want",
                   r"Vendor",
                   r"Device codename",
-                  r"Which kernel do you want to use",
-                  r"Available kernels",
+                  r"Kernel",
                   r"User interface",
                   r"Username",
                   r"Password",
                   r"Timezone",
                   r"Device hostname",
                   r"Enable.*SSH",
-                  r"additional options",
-                  r"\[Y/n\]",
+                  r"Change mirror",
+                  r"Additional packages",
                   r"\[y/N\]",
+                  r"\[Y/n\]",
                   pexpect.EOF,
                   pexpect.TIMEOUT
               ])
@@ -119,32 +123,32 @@ jobs:
               elif i == 2:
                   child.sendline("edge")
               elif i == 3:
-                  child.sendline("downstream")
+                  child.sendline("samsung")
               elif i == 4:
-                  child.sendline("samsung")
-              elif i == 5:
-                  child.sendline("samsung")
-              elif i == 6:
                   child.sendline("j7elte")
-              elif i in [7, 8]:
+              elif i == 5:
                   child.sendline("downstream")
-              elif i == 9:
+              elif i == 6:
                   child.sendline("xfce4")
-              elif i == 10:
+              elif i == 7:
                   child.sendline("postmarket")
-              elif i == 11:
+              elif i == 8:
                   child.sendline("postmarket")
-              elif i == 12:
+              elif i == 9:
                   child.sendline("UTC")
-              elif i == 13:
+              elif i == 10:
                   child.sendline("pmos-j7")
-              elif i == 14:
+              elif i == 11:
                   child.sendline("none")
-              elif i == 15:
+              elif i == 12:
                   child.sendline("n")
-              elif i in [16, 17]:
+              elif i == 13:
+                  child.sendline("")
+              elif i == 14:
                   child.sendline("y")
-              elif i == 18:
+              elif i == 15:
+                  child.sendline("y")
+              elif i == 16:
                   break
               else:
                   print("ERROR: pmbootstrap init timed out")
