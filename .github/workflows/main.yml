@@ -1,4 +1,4 @@
-name: Build postmarketOS Samsung J7
+name: Build postmarketOS Samsung J7 XFCE
 
 on:
   workflow_dispatch:
@@ -34,8 +34,8 @@ jobs:
 
       - name: Clone pmaports
         run: |
-          # FIXED: Changed 'edge' branch to 'main'
-          git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
+          # FIXED: Branch name is 'master' for stable/edge development
+          git clone --depth=1 --branch master https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
       - name: Install pmbootstrap
         run: |
@@ -47,28 +47,27 @@ jobs:
       - name: Initialize pmbootstrap
         run: |
           source ~/venv/bin/activate
-          # Automated init for j7elte
+          # Automated init for j7elte with XFCE4
           pmbootstrap -y -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
           edge
           samsung
           j7elte
           y
-          none
+          xfce4
           $PMOS_USER
           $PMOS_HOSTNAME
           y
           n
           n
           EOF
-          # Note: We use 'none' for UI to save RAM for n8n/AI (Headless mode)
 
       - name: Build Android recovery zip
         run: |
           source ~/venv/bin/activate
+          # We add extra packages you need for your Mini PC setup
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
+            --add "nodejs,npm,python3,zram-init,networkmanager,sudo" \
             --android-recovery-zip \
-            --no-sshd \
-            --no-firewall \
             --password "$PMOS_PASSWORD"
 
       - name: Collect artifacts
@@ -82,5 +81,5 @@ jobs:
       - name: Upload zip
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-recovery-zip
+          name: pmos-j7-xfce-recovery
           path: output/
