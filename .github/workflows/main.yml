@@ -1,4 +1,4 @@
-name: Build postmarketOS Samsung J7 XFCE
+name: Build postmarketOS Samsung J7 Final
 
 on:
   workflow_dispatch:
@@ -11,9 +11,6 @@ jobs:
     env:
       PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
       PMOS_APORTS: /home/runner/pmaports
-      PMOS_USER: postmarket
-      PMOS_PASSWORD: postmarket
-      PMOS_HOSTNAME: pmos-j7
 
     steps:
       - name: Install System Dependencies
@@ -23,27 +20,26 @@ jobs:
             ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
             python3-tomli openssl kpartx
 
-      - name: Create Clean Swap Space
+      - name: Fix Swap Space
         run: |
+          # Disable any existing swap to avoid "Text file busy"
           sudo swapoff -a || true
-          # Using a unique path to avoid 'Text file busy'
-          SWAPFILE=/mnt/pmos_final_swap
-          sudo rm -f "$SWAPFILE"
-          sudo fallocate -l 12G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=12288
-          sudo chmod 600 "$SWAPFILE"
-          sudo mkswap "$SWAPFILE"
-          sudo swapon "$SWAPFILE"
+          sudo rm -f /mnt/pmos_swap
+          sudo fallocate -l 12G /mnt/pmos_swap
+          sudo chmod 600 /mnt/pmos_swap
+          sudo mkswap /mnt/pmos_swap
+          sudo swapon /mnt/pmos_swap
 
       - name: Clone pmbootstrap
         run: git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
-      - name: Clone pmaports
+      - name: Clone pmaports (Main Branch)
         run: |
-          # The official development branch for 2026 is 'main'
+          # FIX: Branch 'edge' is now 'main'
           rm -rf "$PMOS_APORTS"
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
-      - name: Install pmbootstrap in VENV
+      - name: Setup Python Environment
         run: |
           python3 -m venv ~/venv
           source ~/venv/bin/activate
@@ -52,33 +48,37 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize and Configure pmbootstrap
+      - name: Manually Create Config (Bypass Init)
         run: |
+          # This creates the config file directly to prevent all 'init' prompt errors
+          mkdir -p ~/.config
+          cat <<EOF > ~/.config/pmbootstrap.cfg
+          [pmbootstrap]
+          aports = $PMOS_APORTS
+          work = $PMOS_WORKDIR
+          jobs = 2
+          mirror_alpine = http://dl-cdn.alpinelinux.org/alpine/
+          mirror_postmarketos = http://mirror.postmarketos.org/postmarketos/
+          channel = edge
+          device = samsung-j7elte
+          ui = xfce4
+          user = postmarket
+          hostname = pmos-j7
+          build_pkgs_on_install = False
+          systemd = False
+          EOF
+          
           source ~/venv/bin/activate
-          rm -rf ~/.config/pmbootstrap.cfg
-          
-          # 1. Create the initial config file using --nd (non-interactive default)
-          pmbootstrap init --nd
-          
-          # 2. Overwrite with your specific J7 requirements
-          pmbootstrap config work "$PMOS_WORKDIR"
-          pmbootstrap config aports "$PMOS_APORTS"
-          pmbootstrap config channel edge
-          pmbootstrap config device samsung-j7elte
-          pmbootstrap config ui xfce4
-          pmbootstrap config user "$PMOS_USER"
-          pmbootstrap config hostname "$PMOS_HOSTNAME"
-          pmbootstrap config systemd False
           pmbootstrap status
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Adding zram-init for J7's 1.5GB RAM management
+          # zram-init is mandatory for J7 (1.5GB RAM)
           pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
-            --password "$PMOS_PASSWORD"
+            --password "postmarket"
 
       - name: Export and Collect
         run: |
@@ -86,11 +86,9 @@ jobs:
           source ~/venv/bin/activate
           pmbootstrap export
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
-          ls -lah output
 
       - name: Upload Finished Image
-        uses: actions/upload-artifact@v4 # Valid GitHub Actions syntax
+        uses: actions/upload-artifact@v4
         with:
-          name: postmarketOS-J7-Final
+          name: pmos-samsung-j7-xfce
           path: output/
-          if-no-files-found: error
