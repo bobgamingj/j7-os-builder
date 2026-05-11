@@ -22,7 +22,6 @@ jobs:
 
       - name: Fix Swap Space
         run: |
-          # Disable any existing swap to avoid "Text file busy"
           sudo swapoff -a || true
           sudo rm -f /mnt/pmos_swap
           sudo fallocate -l 12G /mnt/pmos_swap
@@ -35,7 +34,6 @@ jobs:
 
       - name: Clone pmaports (Main Branch)
         run: |
-          # FIX: Branch 'edge' is now 'main'
           rm -rf "$PMOS_APORTS"
           git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
 
@@ -48,10 +46,16 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Manually Create Config (Bypass Init)
+      - name: Create Config and Link Aports
         run: |
-          # This creates the config file directly to prevent all 'init' prompt errors
+          # 1. Create the directory structure pmbootstrap expects
+          mkdir -p "$PMOS_WORKDIR/cache_git"
           mkdir -p ~/.config
+          
+          # 2. Link your cloned aports to the internal cache location to prevent "dir not found"
+          ln -s "$PMOS_APORTS" "$PMOS_WORKDIR/cache_git/pmaports"
+          
+          # 3. Create config with forced absolute paths
           cat <<EOF > ~/.config/pmbootstrap.cfg
           [pmbootstrap]
           aports = $PMOS_APORTS
@@ -74,7 +78,7 @@ jobs:
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # zram-init is mandatory for J7 (1.5GB RAM)
+          # Mandatory zram-init for J7's 1.5GB RAM
           pmbootstrap install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
