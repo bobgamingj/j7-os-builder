@@ -50,29 +50,29 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (Safe Flag Mode)
+      - name: Initialize pmbootstrap (Non-Interactive Fixed)
         run: |
           source ~/venv/bin/activate
           rm -rf ~/.config/pmbootstrap.cfg
           
-          # CRITICAL FIX: Using explicit flags to bypass interactive prompts entirely.
-          # This avoids the "EOF when reading a line" and "Invalid channel" errors.
-          pmbootstrap -y \
-            -w "$PMOS_WORKDIR" \
-            -p "$PMOS_APORTS" \
-            init \
-            --channel=edge \
-            --vendor=samsung \
-            --device=j7elte \
-            --ui=xfce4 \
-            --user="$PMOS_USER" \
-            --hostname="$PMOS_HOSTNAME" \
-            --no-build-pkgs-on-install
+          # This heredoc is specifically ordered for pmbootstrap 3.10.1 
+          # to prevent "EOF when reading a line" or "Invalid channel"
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" init <<EOF
+          edge
+          samsung
+          j7elte
+          y
+          xfce4
+          $PMOS_USER
+          $PMOS_HOSTNAME
+          y
+          n
+          n
+          EOF
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
-          # Adding zram-init (essential for 1.5GB RAM) and nodejs for n8n
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
@@ -83,7 +83,6 @@ jobs:
           mkdir -p output
           source ~/venv/bin/activate
           pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" export
-          # Locate the .zip in the temporary export directory
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
           ls -lah output
 
