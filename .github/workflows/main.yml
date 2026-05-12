@@ -12,7 +12,6 @@ jobs:
       DEBIAN_FRONTEND: noninteractive
       PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
       PMOS_APORTS: /home/runner/.local/var/pmbootstrap/cache_git/pmaports
-      PMOS_CONFIG: /home/runner/.config/pmbootstrap_v3.cfg
 
     steps:
       - name: Checkout repository
@@ -41,7 +40,8 @@ jobs:
             e2fsprogs \
             dosfstools \
             ccache \
-            openssl
+            openssl \
+            expect
 
       - name: Create swap
         run: |
@@ -75,43 +75,95 @@ jobs:
             "$PMOS_APORTS"
           test -d "$PMOS_APORTS"
 
-      - name: Preseed pmbootstrap config
-        run: |
-          set -euxo pipefail
-          mkdir -p ~/.config
-
-          source /home/runner/venv/bin/activate
-
-          pmbootstrap -c "$PMOS_CONFIG" config work "$PMOS_WORKDIR"
-          pmbootstrap -c "$PMOS_CONFIG" config aports "$PMOS_APORTS"
-          pmbootstrap -c "$PMOS_CONFIG" config device samsung-j7elte
-          pmbootstrap -c "$PMOS_CONFIG" config kernel downstream
-          pmbootstrap -c "$PMOS_CONFIG" config ui xfce4
-          pmbootstrap -c "$PMOS_CONFIG" config user pmos
-          pmbootstrap -c "$PMOS_CONFIG" config hostname j7mini
-          pmbootstrap -c "$PMOS_CONFIG" config timezone UTC
-          pmbootstrap -c "$PMOS_CONFIG" config locale en_US.UTF-8
-          pmbootstrap -c "$PMOS_CONFIG" config jobs 4
-          pmbootstrap -c "$PMOS_CONFIG" config ccache_size 5G
-
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
           source /home/runner/venv/bin/activate
-          mkdir -p "$PMOS_WORKDIR"
-          pmbootstrap -c "$PMOS_CONFIG" -y init --shallow-initial-clone
+
+          cat > /tmp/pmbootstrap_init.expect <<'EOF'
+          set timeout 120
+          log_user 1
+
+          spawn pmbootstrap -w $env(PMOS_WORKDIR) -p $env(PMOS_APORTS) init
+
+          expect {
+            -re {(?i)work path.*:} {
+              send -- "$env(PMOS_WORKDIR)\r"
+              exp_continue
+            }
+            -re {(?i)pmaports.*path.*:} {
+              send -- "$env(PMOS_APORTS)\r"
+              exp_continue
+            }
+            -re {(?i)channel.*:} {
+              send -- "edge\r"
+              exp_continue
+            }
+            -re {(?i)device vendor.*:} {
+              send -- "samsung\r"
+              exp_continue
+            }
+            -re {(?i)(codename|model).*:} {
+              send -- "j7elte\r"
+              exp_continue
+            }
+            -re {(?i)kernel.*:} {
+              send -- "downstream\r"
+              exp_continue
+            }
+            -re {(?i)ui.*:} {
+              send -- "xfce4\r"
+              exp_continue
+            }
+            -re {(?i)(username|user).*:} {
+              send -- "pmos\r"
+              exp_continue
+            }
+            -re {(?i)hostname.*:} {
+              send -- "j7mini\r"
+              exp_continue
+            }
+            -re {(?i)timezone.*:} {
+              send -- "UTC\r"
+              exp_continue
+            }
+            -re {(?i)locale.*:} {
+              send -- "en_US.UTF-8\r"
+              exp_continue
+            }
+            -re {(?i)password.*:} {
+              send -- "123456\r"
+              exp_continue
+            }
+            -re {(?i)systemd.*:} {
+              send -- "yes\r"
+              exp_continue
+            }
+            -re {(?i)ssh.*keys.*:} {
+              send -- "\r"
+              exp_continue
+            }
+            -re {(?i)mirror.*:} {
+              send -- "\r"
+              exp_continue
+            }
+            eof
+          }
+          EOF
+
+          expect -f /tmp/pmbootstrap_init.expect
 
       - name: Show status
         run: |
           set -euxo pipefail
           source /home/runner/venv/bin/activate
-          pmbootstrap -c "$PMOS_CONFIG" status
+          pmbootstrap -w "$PMOS_WORKDIR" status
 
-      - name: Build recovery zip
+      - name: Build recovery ZIP
         run: |
           set -euxo pipefail
           source /home/runner/venv/bin/activate
-          pmbootstrap -c "$PMOS_CONFIG" install \
+          pmbootstrap -w "$PMOS_WORKDIR" install \
             --android-recovery-zip \
             --password 123456
 
@@ -119,10 +171,12 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p output
+
           find "$PMOS_WORKDIR" \
             -type f \
             \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
             -exec cp -v {} output/ \; || true
+
           ls -lah output
 
       - name: Upload artifacts
