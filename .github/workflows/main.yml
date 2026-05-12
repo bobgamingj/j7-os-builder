@@ -126,7 +126,7 @@ jobs:
             "$PMOS_APORTS"
 
       #
-      # Create config manually
+      # Create pmbootstrap config
       #
       - name: Create pmbootstrap config
         run: |
@@ -162,7 +162,7 @@ jobs:
             | grep samsung-j7 || true
 
       #
-      # Build postmarketOS recovery ZIP
+      # Build recovery ZIP
       #
       - name: Build recovery ZIP
         run: |
@@ -170,18 +170,12 @@ jobs:
 
           source /home/runner/venv/bin/activate
 
-          #
-          # IMPORTANT:
-          # DO NOT RUN INIT IN CI
-          #
-
           pmbootstrap \
             --details-to-stdout \
             -c "$PMOS_CONFIG" \
             install \
             --android-recovery-zip \
-            --password 123456 \
-            --disk 8G
+            --password 123456
 
       #
       # Export artifacts
