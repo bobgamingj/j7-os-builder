@@ -17,7 +17,7 @@ jobs:
 
     steps:
       #
-      # Checkout
+      # Checkout repository
       #
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,11 +53,15 @@ jobs:
             openssl
 
       #
-      # Create swap
+      # Create swap memory
       #
       - name: Create swap
         run: |
           set -euxo pipefail
+
+          sudo swapoff -a || true
+
+          sudo rm -f /mnt/pmos.swap || true
 
           sudo fallocate -l 8G /mnt/pmos.swap
 
@@ -70,7 +74,7 @@ jobs:
           free -h
 
       #
-      # Setup Python
+      # Setup Python virtual environment
       #
       - name: Setup Python
         run: |
@@ -86,13 +90,13 @@ jobs:
             wheel
 
           #
-          # FIX TOMLI ERROR
+          # FIX FOR TOMLI ERROR
           #
           python -m pip install \
             tomli \
             typing_extensions
 
-          python -c "import tomli"
+          python -c "import tomli; print('tomli OK')"
 
           #
           # INSTALL PMBOOTSTRAP
@@ -127,8 +131,12 @@ jobs:
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
 
+          test -d "$PMOS_APORTS"
+
+          ls -lah "$PMOS_APORTS"
+
       #
-      # Create config manually
+      # Create pmbootstrap config
       #
       - name: Create pmbootstrap config
         run: |
@@ -139,8 +147,7 @@ jobs:
           work=$PMOS_WORKDIR
           aports=$PMOS_APORTS
           channel=edge
-          device=samsung-j7elte
-          kernel=downstream
+          device=j7elte
           ui=xfce4
           user=pmos
           password=123456
@@ -148,8 +155,6 @@ jobs:
           timezone=UTC
           locale=en_US.UTF-8
           systemd=yes
-          jobs=4
-          ccache_size=5G
           EOF
 
           cat "$PMOS_CONFIG"
@@ -163,21 +168,31 @@ jobs:
 
           source /home/runner/venv/bin/activate
 
+          #
+          # VERIFY TOMLI EXISTS
+          #
           python -c "import tomli"
 
+          #
+          # VERIFY CONFIG EXISTS
+          #
           test -f "$PMOS_CONFIG"
 
+          #
+          # VERIFY PMAPORTS EXISTS
+          #
           test -d "$PMOS_APORTS"
 
           #
-          # THIS CREATES INTERNAL STATE
+          # INITIALIZE PMBOOTSTRAP
           #
           pmbootstrap \
+            --details-to-stdout \
             -c "$PMOS_CONFIG" \
             init
 
       #
-      # Show status
+      # Show pmbootstrap status
       #
       - name: Show status
         run: |
@@ -186,11 +201,12 @@ jobs:
           source /home/runner/venv/bin/activate
 
           pmbootstrap \
+            --details-to-stdout \
             -c "$PMOS_CONFIG" \
             status
 
       #
-      # Build recovery ZIP
+      # Build postmarketOS recovery ZIP
       #
       - name: Build recovery ZIP
         run: |
@@ -199,6 +215,7 @@ jobs:
           source /home/runner/venv/bin/activate
 
           pmbootstrap \
+            --details-to-stdout \
             -c "$PMOS_CONFIG" \
             install \
             --android-recovery-zip \
@@ -206,7 +223,7 @@ jobs:
             --disk 8G
 
       #
-      # Export artifacts
+      # Export build artifacts
       #
       - name: Export artifacts
         run: |
