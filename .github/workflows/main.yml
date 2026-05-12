@@ -21,7 +21,6 @@ jobs:
       - name: Install dependencies
         run: |
           set -euxo pipefail
-
           sudo apt-get update
           sudo apt-get install -y \
             git \
@@ -47,7 +46,6 @@ jobs:
       - name: Create swap
         run: |
           set -euxo pipefail
-
           sudo swapoff -a || true
           sudo rm -f /mnt/pmos.swap || true
           sudo fallocate -l 8G /mnt/pmos.swap
@@ -59,112 +57,72 @@ jobs:
       - name: Setup Python
         run: |
           set -euxo pipefail
-
           python3 -m venv /home/runner/venv
           source /home/runner/venv/bin/activate
-
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install tomli
           python -c "import tomli; print('tomli OK')"
-
           python -m pip install --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-
           pmbootstrap --version
 
-      - name: Prepare pmaports location
+      - name: Prepare pmaports
         run: |
           set -euxo pipefail
-
           mkdir -p "$PMOS_WORKDIR/cache_git"
           git clone --depth=1 \
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
-
           test -d "$PMOS_APORTS"
-          ls -la "$PMOS_APORTS" | head
 
-      - name: Create pmbootstrap config
+      - name: Preseed pmbootstrap config
         run: |
           set -euxo pipefail
-
           mkdir -p ~/.config
 
-          cat > "$PMOS_CONFIG" <<EOF
-          [pmbootstrap]
-          work=$PMOS_WORKDIR
+          source /home/runner/venv/bin/activate
 
-          [providers]
-          mirrors=none
-
-          [device]
-          vendor=samsung
-          codename=j7elte
-          kernel=downstream
-
-          [ui]
-          name=xfce4
-
-          [user]
-          username=pmos
-          password=123456
-          hostname=j7mini
-
-          [build]
-          ccache=true
-          jobs=4
-
-          [paths]
-          aports=$PMOS_APORTS
-          EOF
-
-          cat "$PMOS_CONFIG"
+          pmbootstrap -c "$PMOS_CONFIG" config work "$PMOS_WORKDIR"
+          pmbootstrap -c "$PMOS_CONFIG" config aports "$PMOS_APORTS"
+          pmbootstrap -c "$PMOS_CONFIG" config device samsung-j7elte
+          pmbootstrap -c "$PMOS_CONFIG" config kernel downstream
+          pmbootstrap -c "$PMOS_CONFIG" config ui xfce4
+          pmbootstrap -c "$PMOS_CONFIG" config user pmos
+          pmbootstrap -c "$PMOS_CONFIG" config hostname j7mini
+          pmbootstrap -c "$PMOS_CONFIG" config timezone UTC
+          pmbootstrap -c "$PMOS_CONFIG" config locale en_US.UTF-8
+          pmbootstrap -c "$PMOS_CONFIG" config jobs 4
+          pmbootstrap -c "$PMOS_CONFIG" config ccache_size 5G
 
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
-
           source /home/runner/venv/bin/activate
-
           mkdir -p "$PMOS_WORKDIR"
-
-          pmbootstrap \
-            -c "$PMOS_CONFIG" \
-            --details-to-stdout \
-            init
+          pmbootstrap -c "$PMOS_CONFIG" -y init --shallow-initial-clone
 
       - name: Show status
         run: |
           set -euxo pipefail
-
           source /home/runner/venv/bin/activate
-
-          pmbootstrap \
-            -c "$PMOS_CONFIG" \
-            status
+          pmbootstrap -c "$PMOS_CONFIG" status
 
       - name: Build recovery zip
         run: |
           set -euxo pipefail
-
           source /home/runner/venv/bin/activate
-
-          pmbootstrap \
-            -c "$PMOS_CONFIG" \
-            install \
-            --android-recovery-zip
+          pmbootstrap -c "$PMOS_CONFIG" install \
+            --android-recovery-zip \
+            --password 123456
 
       - name: Export artifacts
         run: |
           set -euxo pipefail
-
           mkdir -p output
-
           find "$PMOS_WORKDIR" \
             -type f \
             \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
             -exec cp -v {} output/ \; || true
-
           ls -lah output
 
       - name: Upload artifacts
