@@ -43,37 +43,36 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Initialize pmbootstrap (Complete 12-Step Sequence)
+      - name: Validate Device Support
         run: |
           source ~/venv/bin/activate
-          # This sequence answers every 3.10.1 prompt in order:
-          # Workdir, Aports, Channel, Vendor, Device, Downstream(y), 
-          # User, Audio(pulseaudio), WiFi(wpa_supplicant), UI(xfce4), Hostname, Extra(n)
-          pmbootstrap init <<EOF
-          $PMOS_WORKDIR
-          $PMOS_APORTS
-          edge
-          samsung
-          j7elte
-          y
-          postmarket
-          pulseaudio
-          wpa_supplicant
-          xfce4
-          pmos-j7
-          n
-          EOF
+          echo "Checking available devices..."
+          pmbootstrap --details-to-stdout aports search samsung-j7elte || \
+          pmbootstrap --details-to-stdout aports search j7elte || \
+          pmbootstrap --details-to-stdout aports list | grep -i "samsung\|j7" || true
+
+      - name: Initialize pmbootstrap with Error Details
+        run: |
+          source ~/venv/bin/activate
+          set -e  # Exit on any error
           
-          # CRITICAL: Force OpenRC. Your logs show 'systemd: yes', 
-          # which will hang the J7 boot process.
-          pmbootstrap config systemd False
-          pmbootstrap status
+          # Use explicit config calls instead of here-doc to better handle inputs
+          pmbootstrap --details-to-stdout config workdir "$PMOS_WORKDIR" || { echo "Workdir config failed"; exit 1; }
+          pmbootstrap --details-to-stdout config aports "$PMOS_APORTS" || { echo "Aports config failed"; exit 1; }
+          pmbootstrap --details-to-stdout config channel edge || { echo "Channel config failed"; exit 1; }
+          pmbootstrap --details-to-stdout config vendor samsung || { echo "Vendor config failed"; exit 1; }
+          pmbootstrap --details-to-stdout config device j7elte || { echo "Device config failed"; exit 1; }
+          pmbootstrap --details-to-stdout config ui console || { echo "UI config failed"; exit 1; }
+          pmbootstrap --details-to-stdout config systemd no || { echo "Systemd config failed"; exit 1; }
+          
+          # Full status report
+          pmbootstrap --details-to-stdout status
 
       - name: Build Android Recovery Zip
         run: |
           source ~/venv/bin/activate
           # zram-init is required for n8n/AI on 1.5GB RAM
-          pmbootstrap install \
+          pmbootstrap --details-to-stdout install \
             --add "zram-init,nodejs,npm,networkmanager,sudo" \
             --android-recovery-zip \
             --no-systemd \
@@ -83,11 +82,11 @@ jobs:
         run: |
           mkdir -p output
           source ~/venv/bin/activate
-          pmbootstrap export
+          pmbootstrap --details-to-stdout export
           find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
 
       - name: Upload Finished Image
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-samsung-j7-xfce
+          name: pmos-samsung-j7-console
           path: output/
