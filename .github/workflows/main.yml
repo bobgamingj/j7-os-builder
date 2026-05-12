@@ -10,17 +10,27 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
+
       PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
       PMOS_APORTS: /home/runner/.local/var/pmbootstrap/cache_git/pmaports
+      PMOS_CONFIG: /home/runner/.config/pmbootstrap_v3.cfg
 
     steps:
+      #
+      # Checkout
+      #
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      #
+      # Install dependencies
+      #
       - name: Install dependencies
         run: |
           set -euxo pipefail
+
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             python3 \
@@ -40,145 +50,184 @@ jobs:
             e2fsprogs \
             dosfstools \
             ccache \
-            openssl \
-            expect
+            openssl
 
+      #
+      # Create swap
+      #
       - name: Create swap
         run: |
           set -euxo pipefail
-          sudo swapoff -a || true
-          sudo rm -f /mnt/pmos.swap || true
+
           sudo fallocate -l 8G /mnt/pmos.swap
+
           sudo chmod 600 /mnt/pmos.swap
+
           sudo mkswap /mnt/pmos.swap
+
           sudo swapon /mnt/pmos.swap
+
           free -h
 
+      #
+      # Setup Python
+      #
       - name: Setup Python
         run: |
           set -euxo pipefail
+
           python3 -m venv /home/runner/venv
+
           source /home/runner/venv/bin/activate
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install tomli
-          python -c "import tomli; print('tomli OK')"
-          python -m pip install --no-build-isolation \
+
+          python -m pip install --upgrade \
+            pip \
+            setuptools \
+            wheel
+
+          #
+          # FIX TOMLI ERROR
+          #
+          python -m pip install \
+            tomli \
+            typing_extensions
+
+          python -c "import tomli"
+
+          #
+          # INSTALL PMBOOTSTRAP
+          #
+          python -m pip install \
+            --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+
           pmbootstrap --version
 
-      - name: Prepare pmaports
+      #
+      # Prepare directories
+      #
+      - name: Prepare directories
         run: |
           set -euxo pipefail
+
+          mkdir -p "$PMOS_WORKDIR"
+
           mkdir -p "$PMOS_WORKDIR/cache_git"
+
+          mkdir -p ~/.config
+
+      #
+      # Clone pmaports
+      #
+      - name: Clone pmaports
+        run: |
+          set -euxo pipefail
+
           git clone --depth=1 \
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
-          test -d "$PMOS_APORTS"
 
+      #
+      # Create config manually
+      #
+      - name: Create pmbootstrap config
+        run: |
+          set -euxo pipefail
+
+          cat > "$PMOS_CONFIG" <<EOF
+          [pmbootstrap]
+          work=$PMOS_WORKDIR
+          aports=$PMOS_APORTS
+          channel=edge
+          device=samsung-j7elte
+          kernel=downstream
+          ui=xfce4
+          user=pmos
+          password=123456
+          hostname=j7mini
+          timezone=UTC
+          locale=en_US.UTF-8
+          systemd=yes
+          jobs=4
+          ccache_size=5G
+          EOF
+
+          cat "$PMOS_CONFIG"
+
+      #
+      # Initialize pmbootstrap
+      #
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
+
           source /home/runner/venv/bin/activate
 
-          cat > /tmp/pmbootstrap_init.expect <<'EOF'
-          set timeout 120
-          log_user 1
+          python -c "import tomli"
 
-          spawn pmbootstrap -w $env(PMOS_WORKDIR) -p $env(PMOS_APORTS) init
+          test -f "$PMOS_CONFIG"
 
-          expect {
-            -re {(?i)work path.*:} {
-              send -- "$env(PMOS_WORKDIR)\r"
-              exp_continue
-            }
-            -re {(?i)pmaports.*path.*:} {
-              send -- "$env(PMOS_APORTS)\r"
-              exp_continue
-            }
-            -re {(?i)channel.*:} {
-              send -- "edge\r"
-              exp_continue
-            }
-            -re {(?i)device vendor.*:} {
-              send -- "samsung\r"
-              exp_continue
-            }
-            -re {(?i)(codename|model).*:} {
-              send -- "j7elte\r"
-              exp_continue
-            }
-            -re {(?i)kernel.*:} {
-              send -- "downstream\r"
-              exp_continue
-            }
-            -re {(?i)ui.*:} {
-              send -- "xfce4\r"
-              exp_continue
-            }
-            -re {(?i)(username|user).*:} {
-              send -- "pmos\r"
-              exp_continue
-            }
-            -re {(?i)hostname.*:} {
-              send -- "j7mini\r"
-              exp_continue
-            }
-            -re {(?i)timezone.*:} {
-              send -- "UTC\r"
-              exp_continue
-            }
-            -re {(?i)locale.*:} {
-              send -- "en_US.UTF-8\r"
-              exp_continue
-            }
-            -re {(?i)password.*:} {
-              send -- "123456\r"
-              exp_continue
-            }
-            -re {(?i)systemd.*:} {
-              send -- "yes\r"
-              exp_continue
-            }
-            -re {(?i)ssh.*keys.*:} {
-              send -- "\r"
-              exp_continue
-            }
-            -re {(?i)mirror.*:} {
-              send -- "\r"
-              exp_continue
-            }
-            eof
-          }
-          EOF
+          test -d "$PMOS_APORTS"
 
-          expect -f /tmp/pmbootstrap_init.expect
+          #
+          # THIS CREATES INTERNAL STATE
+          #
+          pmbootstrap \
+            -c "$PMOS_CONFIG" \
+            init
 
+      #
+      # Show status
+      #
       - name: Show status
         run: |
           set -euxo pipefail
-          source /home/runner/venv/bin/activate
-          pmbootstrap -w "$PMOS_WORKDIR" status
 
+          source /home/runner/venv/bin/activate
+
+          pmbootstrap \
+            -c "$PMOS_CONFIG" \
+            status
+
+      #
+      # Build recovery ZIP
+      #
       - name: Build recovery ZIP
         run: |
           set -euxo pipefail
-          source /home/runner/venv/bin/activate
-          pmbootstrap -w "$PMOS_WORKDIR" install \
-            --android-recovery-zip \
-            --password 123456
 
+          source /home/runner/venv/bin/activate
+
+          pmbootstrap \
+            -c "$PMOS_CONFIG" \
+            install \
+            --android-recovery-zip \
+            --password 123456 \
+            --disk 8G
+
+      #
+      # Export artifacts
+      #
       - name: Export artifacts
         run: |
           set -euxo pipefail
+
           mkdir -p output
 
           find "$PMOS_WORKDIR" \
             -type f \
-            \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
+            \( \
+              -name "*.zip" -o \
+              -name "*.img" -o \
+              -name "*.tar.gz" \
+            \) \
             -exec cp -v {} output/ \; || true
 
           ls -lah output
 
+      #
+      # Upload artifacts
+      #
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
