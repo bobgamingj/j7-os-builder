@@ -53,6 +53,21 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
+      - name: Preseed pmbootstrap config
+        run: |
+          set -euxo pipefail
+          source ~/venv/bin/activate
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config work "$PMOS_WORKDIR"
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config aports "$PMOS_APORTS"
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config device samsung-j7elte
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config kernel downstream
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui xfce4
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui_extras false
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config user pmos
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config hostname j7pmos
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config locale en_US.UTF-8
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config timezone UTC
+
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
@@ -68,44 +83,8 @@ jobs:
           spawn pmbootstrap -w $workdir -p $aportspath init
 
           expect {
-            -re {Location of the 'work' path.*} {
-              send -- "$workdir\r"
-              exp_continue
-            }
-            -re {Location of the 'pmaports' path.*} {
-              send -- "$aportspath\r"
-              exp_continue
-            }
             -re {Choose the postmarketOS release channel.*} {
               send -- "edge\r"
-              exp_continue
-            }
-            -re {Choose your target device vendor.*} {
-              send -- "samsung\r"
-              exp_continue
-            }
-            -re {Device codename.*} {
-              send -- "j7elte\r"
-              exp_continue
-            }
-            -re {Choose your username.*} {
-              send -- "pmos\r"
-              exp_continue
-            }
-            -re {User interface.*} {
-              send -- "xfce4\r"
-              exp_continue
-            }
-            -re {Extra packages.*} {
-              send -- "\r"
-              exp_continue
-            }
-            -re {SSH keys.*} {
-              send -- "n\r"
-              exp_continue
-            }
-            -re {Timezone.*} {
-              send -- "UTC\r"
               exp_continue
             }
             eof
@@ -119,19 +98,19 @@ jobs:
         run: |
           set -euxo pipefail
           source ~/venv/bin/activate
-          pmbootstrap --details-to-stdout status
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" status
 
       - name: Build Android recovery zip
         run: |
           set -euxo pipefail
           source ~/venv/bin/activate
-          pmbootstrap --details-to-stdout install --android-recovery-zip
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" install --android-recovery-zip
 
       - name: Export artifacts
         run: |
           set -euxo pipefail
           source ~/venv/bin/activate
-          pmbootstrap --details-to-stdout export
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" export
           mkdir -p output
           find /tmp/postmarketOS-export -type f \( -name "*.zip" -o -name "*.img" \) -exec cp -v {} output/ \; || true
           find "$HOME/.local/var/pmbootstrap" -type f \( -name "*.zip" -o -name "*.img" \) -exec cp -v {} output/ \; || true
