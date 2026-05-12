@@ -53,7 +53,7 @@ jobs:
             openssl
 
       #
-      # Create swap memory
+      # Create swap
       #
       - name: Create swap
         run: |
@@ -74,7 +74,7 @@ jobs:
           free -h
 
       #
-      # Setup Python virtual environment
+      # Setup Python
       #
       - name: Setup Python
         run: |
@@ -90,13 +90,13 @@ jobs:
             wheel
 
           #
-          # FIX FOR TOMLI ERROR
+          # FIX TOMLI ERROR
           #
           python -m pip install \
             tomli \
             typing_extensions
 
-          python -c "import tomli; print('tomli OK')"
+          python -c "import tomli"
 
           #
           # INSTALL PMBOOTSTRAP
@@ -133,8 +133,6 @@ jobs:
 
           test -d "$PMOS_APORTS"
 
-          ls -lah "$PMOS_APORTS"
-
       #
       # Create pmbootstrap config
       #
@@ -168,31 +166,32 @@ jobs:
 
           source /home/runner/venv/bin/activate
 
-          #
-          # VERIFY TOMLI EXISTS
-          #
           python -c "import tomli"
 
-          #
-          # VERIFY CONFIG EXISTS
-          #
           test -f "$PMOS_CONFIG"
 
-          #
-          # VERIFY PMAPORTS EXISTS
-          #
           test -d "$PMOS_APORTS"
 
           #
-          # INITIALIZE PMBOOTSTRAP
+          # FORCE DETAILED OUTPUT
           #
           pmbootstrap \
             --details-to-stdout \
             -c "$PMOS_CONFIG" \
-            init
+            init || \
+          (
+            echo "===== PMBOOTSTRAP LOG ====="
+
+            pmbootstrap \
+              --details-to-stdout \
+              -c "$PMOS_CONFIG" \
+              log || true
+
+            exit 1
+          )
 
       #
-      # Show pmbootstrap status
+      # Show status
       #
       - name: Show status
         run: |
@@ -206,7 +205,7 @@ jobs:
             status
 
       #
-      # Build postmarketOS recovery ZIP
+      # Build recovery ZIP
       #
       - name: Build recovery ZIP
         run: |
@@ -223,7 +222,7 @@ jobs:
             --disk 8G
 
       #
-      # Export build artifacts
+      # Export artifacts
       #
       - name: Export artifacts
         run: |
