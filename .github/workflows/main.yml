@@ -53,21 +53,6 @@ jobs:
           pip install ./pmbootstrap
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Preseed pmbootstrap config
-        run: |
-          set -euxo pipefail
-          source ~/venv/bin/activate
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config work "$PMOS_WORKDIR"
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config aports "$PMOS_APORTS"
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config device samsung-j7elte
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config kernel downstream
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui xfce4
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui_extras false
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config user pmos
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config hostname j7pmos
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config locale en_US.UTF-8
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config timezone UTC
-
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
@@ -80,11 +65,43 @@ jobs:
           set workdir $env(PMOS_WORKDIR)
           set aportspath $env(PMOS_APORTS)
 
-          spawn pmbootstrap -w $workdir -p $aportspath init
+          spawn pmbootstrap -w $workdir -p $aportspath init --shallow-initial-clone
 
           expect {
             -re {Choose the postmarketOS release channel.*} {
               send -- "edge\r"
+              exp_continue
+            }
+            -re {Choose your target device vendor.*} {
+              send -- "samsung\r"
+              exp_continue
+            }
+            -re {Device codename.*} {
+              send -- "j7elte\r"
+              exp_continue
+            }
+            -re {Choose your username.*} {
+              send -- "pmos\r"
+              exp_continue
+            }
+            -re {User interface.*} {
+              send -- "xfce4\r"
+              exp_continue
+            }
+            -re {Locale.*} {
+              send -- "en_US.UTF-8\r"
+              exp_continue
+            }
+            -re {Timezone.*} {
+              send -- "UTC\r"
+              exp_continue
+            }
+            -re {SSH keys.*} {
+              send -- "n\r"
+              exp_continue
+            }
+            -re {.*: $} {
+              send -- "\r"
               exp_continue
             }
             eof
@@ -93,6 +110,17 @@ jobs:
 
           chmod +x /tmp/pmbootstrap-init.exp
           /tmp/pmbootstrap-init.exp
+
+      - name: Configure pmbootstrap after init
+        run: |
+          set -euxo pipefail
+          source ~/venv/bin/activate
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui xfce4
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config user pmos
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config hostname j7pmos
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config locale en_US.UTF-8
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config timezone UTC
+          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config kernel downstream
 
       - name: Show config status
         run: |
