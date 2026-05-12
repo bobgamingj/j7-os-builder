@@ -17,10 +17,25 @@ jobs:
 
     steps:
       #
-      # Checkout repository
+      # Checkout
       #
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      #
+      # Fix broken Ubuntu mirrors
+      #
+      - name: Fix apt mirrors
+        run: |
+          set -euxo pipefail
+
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+
+          sudo apt-get clean
+
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
+
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99-force-ipv4
 
       #
       # Install dependencies
@@ -29,7 +44,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          sudo apt-get update
+          sudo apt-get update -o Acquire::ForceIPv4=true
 
           sudo apt-get install -y \
             git \
@@ -150,7 +165,7 @@ jobs:
           cat "$PMOS_CONFIG"
 
       #
-      # Verify device exists
+      # Verify device
       #
       - name: Verify device
         run: |
