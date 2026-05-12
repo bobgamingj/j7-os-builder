@@ -59,10 +59,6 @@ jobs:
         run: |
           set -euxo pipefail
 
-          sudo swapoff -a || true
-
-          sudo rm -f /mnt/pmos.swap || true
-
           sudo fallocate -l 8G /mnt/pmos.swap
 
           sudo chmod 600 /mnt/pmos.swap
@@ -114,8 +110,6 @@ jobs:
         run: |
           set -euxo pipefail
 
-          mkdir -p "$PMOS_WORKDIR"
-
           mkdir -p "$PMOS_WORKDIR/cache_git"
 
           mkdir -p ~/.config
@@ -131,10 +125,8 @@ jobs:
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
 
-          test -d "$PMOS_APORTS"
-
       #
-      # Create pmbootstrap config
+      # Create config manually
       #
       - name: Create pmbootstrap config
         run: |
@@ -145,7 +137,7 @@ jobs:
           work=$PMOS_WORKDIR
           aports=$PMOS_APORTS
           channel=edge
-          device=j7elte
+          device=samsung-j7elte
           ui=xfce4
           user=pmos
           password=123456
@@ -158,47 +150,30 @@ jobs:
           cat "$PMOS_CONFIG"
 
       #
-      # Initialize pmbootstrap
+      # Verify device exists
       #
-      - name: Initialize pmbootstrap
+      - name: Verify device
         run: |
           set -euxo pipefail
 
-          source /home/runner/venv/bin/activate
-
-          python -c "import tomli"
-
-          test -f "$PMOS_CONFIG"
-
-          test -d "$PMOS_APORTS"
-
-          pmbootstrap \
-            --details-to-stdout \
-            -c "$PMOS_CONFIG" \
-            init
+          find "$PMOS_APORTS/device" \
+            -maxdepth 2 \
+            -type d \
+            | grep samsung-j7 || true
 
       #
-      # Show status
-      #
-      - name: Show status
-        run: |
-          set -euxo pipefail
-
-          source /home/runner/venv/bin/activate
-
-          pmbootstrap \
-            --details-to-stdout \
-            -c "$PMOS_CONFIG" \
-            status
-
-      #
-      # Build recovery ZIP
+      # Build postmarketOS recovery ZIP
       #
       - name: Build recovery ZIP
         run: |
           set -euxo pipefail
 
           source /home/runner/venv/bin/activate
+
+          #
+          # IMPORTANT:
+          # DO NOT RUN INIT IN CI
+          #
 
           pmbootstrap \
             --details-to-stdout \
