@@ -1,89 +1,48 @@
-name: Build postmarketOS Samsung J7 Final
+name: Build postmarketOS J7
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-
-    env:
-      PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
-      PMOS_APORTS: /home/runner/pmaports
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Install System Dependencies
+      - name: Install packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git python3 python3-pip python3-venv build-essential \
-            ca-certificates zip unzip rsync sudo qemu-user-static binfmt-support \
-            python3-tomli openssl kpartx
+          sudo apt update
+          sudo apt install -y python3-pip git sudo
 
-      - name: Create Clean Swap Space
+      - name: Install pmbootstrap
         run: |
-          sudo swapoff -a || true
-          sudo rm -f /mnt/pmos_swap
-          sudo fallocate -l 12G /mnt/pmos_swap
-          sudo chmod 600 /mnt/pmos_swap
-          sudo mkswap /mnt/pmos_swap
-          sudo swapon /mnt/pmos_swap
+          pip install --user pmbootstrap
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Clone pmbootstrap and pmaports
+      - name: Clone pmaports
         run: |
-          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-          git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
+          git clone https://github.com/postmarketOS/pmaports.git
+          cd pmaports
 
-      - name: Setup Python Environment
+      - name: Initialize pmbootstrap
         run: |
-          python3 -m venv ~/venv
-          source ~/venv/bin/activate
-          pip install --upgrade pip setuptools wheel
-          pip install tomli
-          pip install ./pmbootstrap
-          echo "$HOME/venv/bin" >> "$GITHUB_PATH"
+          mkdir -p ~/.config/pmbootstrap
+          cat > ~/.config/pmbootstrap_v3.cfg <<EOF
+          [pmbootstrap]
+          device=samsung-j7elte
+          userinterface=phosh
+          EOF
 
-      - name: Validate Device Support
+      - name: Build
         run: |
-          source ~/venv/bin/activate
-          echo "Checking available devices..."
-          pmbootstrap --details-to-stdout status || true
+          pmbootstrap --details-to-stdout init
+          yes | pmbootstrap install --android-recovery-zip
 
-      - name: Initialize pmbootstrap with Error Details
+      - name: Export
         run: |
-          source ~/venv/bin/activate
-          set -e  # Exit on any error
-          
-          # Use correct pmbootstrap config syntax
-          pmbootstrap --details-to-stdout config aports "$PMOS_APORTS" || { echo "Aports config failed"; exit 1; }
-          pmbootstrap --details-to-stdout config channel edge || { echo "Channel config failed"; exit 1; }
-          pmbootstrap --details-to-stdout config vendor samsung || { echo "Vendor config failed"; exit 1; }
-          pmbootstrap --details-to-stdout config device j7elte || { echo "Device config failed"; exit 1; }
-          pmbootstrap --details-to-stdout config ui console || { echo "UI config failed"; exit 1; }
-          pmbootstrap --details-to-stdout config systemd no || { echo "Systemd config failed"; exit 1; }
-          
-          # Full status report
-          pmbootstrap --details-to-stdout status
+          pmbootstrap export
 
-      - name: Build Android Recovery Zip
-        run: |
-          source ~/venv/bin/activate
-          # zram-init is required for n8n/AI on 1.5GB RAM
-          pmbootstrap --details-to-stdout install \
-            --add "zram-init,nodejs,npm,networkmanager,sudo" \
-            --android-recovery-zip \
-            --no-systemd \
-            --password "postmarket"
-
-      - name: Export and Collect
-        run: |
-          mkdir -p output
-          source ~/venv/bin/activate
-          pmbootstrap --details-to-stdout export
-          find /tmp/postmarketOS-export -type f -name "*.zip" -exec cp -v {} output/ \;
-
-      - name: Upload Finished Image
+      - name: Upload ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-samsung-j7-console
-          path: output/
+          name: postmarketos-j7elte
+          path: /tmp/postmarketOS-export/
