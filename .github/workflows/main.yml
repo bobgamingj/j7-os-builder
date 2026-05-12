@@ -242,4 +242,3 @@ jobs:
         with:
           name: pmos-j7-mini-pc
           path: output/
-```
