@@ -1,48 +1,124 @@
-name: Build postmarketOS J7
+name: Build postmarketOS Samsung J7 Final
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    env:
+      PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
+      PMOS_APORTS: /home/runner/pmaports
+      DEBIAN_FRONTEND: noninteractive
 
     steps:
-      - name: Install packages
+      - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y python3-pip git sudo
+          sudo apt-get update
+          sudo apt-get install -y \
+            git python3 python3-pip python3-venv \
+            build-essential ca-certificates zip unzip rsync sudo \
+            qemu-user-static binfmt-support python3-tomli openssl kpartx \
+            expect
 
-      - name: Install pmbootstrap
+      - name: Create swap space
         run: |
-          pip install --user pmbootstrap
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          sudo swapoff -a || true
+          sudo rm -f /mnt/pmos_swap
+          sudo fallocate -l 12G /mnt/pmos_swap
+          sudo chmod 600 /mnt/pmos_swap
+          sudo mkswap /mnt/pmos_swap
+          sudo swapon /mnt/pmos_swap
 
-      - name: Clone pmaports
+      - name: Clone pmbootstrap and pmaports
         run: |
-          git clone https://github.com/postmarketOS/pmaports.git
-          cd pmaports
+          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          git clone --depth=1 --branch main https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMOS_APORTS"
+
+      - name: Setup Python environment
+        run: |
+          python3 -m venv ~/venv
+          source ~/venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install tomli
+          pip install ./pmbootstrap
+          echo "$HOME/venv/bin" >> "$GITHUB_PATH"
 
       - name: Initialize pmbootstrap
         run: |
-          mkdir -p ~/.config/pmbootstrap
-          cat > ~/.config/pmbootstrap_v3.cfg <<EOF
-          [pmbootstrap]
-          device=samsung-j7elte
-          userinterface=phosh
+          source ~/venv/bin/activate
+          cat > /tmp/pmbootstrap-init.exp <<'EOF'
+          #!/usr/bin/expect -f
+          set timeout -1
+
+          spawn pmbootstrap init
+
+          expect {
+            -re {Location of the 'work' path.*:} {
+              send -- "\r"
+              exp_continue
+            }
+            -re {Choose the postmarketOS release channel.*:} {
+              send -- "edge\r"
+              exp_continue
+            }
+            -re {Choose your target device vendor.*:} {
+              send -- "samsung\r"
+              exp_continue
+            }
+            -re {Device codename.*:} {
+              send -- "j7elte\r"
+              exp_continue
+            }
+            -re {Choose your username.*:} {
+              send -- "pmos\r"
+              exp_continue
+            }
+            -re {User interface.*:} {
+              send -- "none\r"
+              exp_continue
+            }
+            -re {Additional options.*:} {
+              send -- "\r"
+              exp_continue
+            }
+            -re {SSH keys.*:} {
+              send -- "n\r"
+              exp_continue
+            }
+            -re {Timezone.*:} {
+              send -- "\r"
+              exp_continue
+            }
+            eof
+          }
           EOF
+          chmod +x /tmp/pmbootstrap-init.exp
+          /tmp/pmbootstrap-init.exp
 
-      - name: Build
+      - name: Show config status
         run: |
-          pmbootstrap --details-to-stdout init
-          yes | pmbootstrap install --android-recovery-zip
+          source ~/venv/bin/activate
+          pmbootstrap --details-to-stdout status
 
-      - name: Export
+      - name: Build Android recovery zip
         run: |
-          pmbootstrap export
+          source ~/venv/bin/activate
+          pmbootstrap --details-to-stdout install --android-recovery-zip
 
-      - name: Upload ZIP
+      - name: Export artifacts
+        run: |
+          source ~/venv/bin/activate
+          pmbootstrap --details-to-stdout export
+          mkdir -p output
+          find /tmp/postmarketOS-export -type f \( -name "*.zip" -o -name "*.img" \) -exec cp -v {} output/ \; || true
+          find "$HOME/.local/var/pmbootstrap" -type f \( -name "*.zip" -o -name "*.img" \) -exec cp -v {} output/ \; || true
+          ls -lah output
+
+      - name: Upload finished image
         uses: actions/upload-artifact@v4
         with:
-          name: postmarketos-j7elte
-          path: /tmp/postmarketOS-export/
+          name: pmos-samsung-j7elte
+          path: output/
