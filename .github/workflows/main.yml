@@ -23,13 +23,13 @@ jobs:
         uses: actions/checkout@v4
 
       #
-      # Fix broken Ubuntu mirrors
+      # Fix Ubuntu mirrors
       #
       - name: Fix apt mirrors
         run: |
           set -euxo pipefail
 
-          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list || true
 
           sudo apt-get clean
 
@@ -101,7 +101,7 @@ jobs:
             wheel
 
           #
-          # FIX TOMLI ERROR
+          # FIX TOMLI
           #
           python -m pip install \
             tomli \
@@ -119,11 +119,19 @@ jobs:
           pmbootstrap --version
 
       #
-      # Prepare directories
+      # CLEAN OLD PMBOOTSTRAP STATE
       #
-      - name: Prepare directories
+      - name: Clean old workdir
         run: |
           set -euxo pipefail
+
+          source /home/runner/venv/bin/activate || true
+
+          pmbootstrap shutdown || true
+
+          sudo rm -rf "$PMOS_WORKDIR"
+
+          rm -rf ~/.config/pmbootstrap_v3.cfg || true
 
           mkdir -p "$PMOS_WORKDIR/cache_git"
 
@@ -141,7 +149,7 @@ jobs:
             "$PMOS_APORTS"
 
       #
-      # Create pmbootstrap config
+      # Create config
       #
       - name: Create pmbootstrap config
         run: |
