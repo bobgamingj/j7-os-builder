@@ -152,10 +152,11 @@ jobs:
           hostname=j7mini
           timezone=UTC
           locale=en_US.UTF-8
-          systemd=yes
+          systemd=always
           EOF
 
           cat "$PMOS_CONFIG"
+
       #
       # Initialize pmbootstrap
       #
@@ -165,26 +166,16 @@ jobs:
 
           source /home/runner/venv/bin/activate
 
-          echo "===== PMBOOTSTRAP VERSION ====="
-          pmbootstrap --version
+          python -c "import tomli"
 
-          echo "===== CONFIG ====="
-          cat "$PMOS_CONFIG"
+          test -f "$PMOS_CONFIG"
 
-          echo "===== PMAPORTS CHECK ====="
-          ls -lah "$PMOS_APORTS"
-
-          echo "===== AVAILABLE DEVICES ====="
-          find "$PMOS_APORTS/device" -maxdepth 2 -type d | grep j7 || true
-
-          echo "===== START INIT ====="
+          test -d "$PMOS_APORTS"
 
           pmbootstrap \
             --details-to-stdout \
             -c "$PMOS_CONFIG" \
             init
-
-          echo "===== INIT FINISHED ====="
 
       #
       # Show status
