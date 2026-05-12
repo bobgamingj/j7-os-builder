@@ -80,6 +80,10 @@ jobs:
               send -- "j7elte\r"
               exp_continue
             }
+            -re {Type\? \(mainline/downstream\):} {
+              send -- "downstream\r"
+              exp_continue
+            }
             -re {Choose your username.*} {
               send -- "pmos\r"
               exp_continue
@@ -110,17 +114,6 @@ jobs:
 
           chmod +x /tmp/pmbootstrap-init.exp
           /tmp/pmbootstrap-init.exp
-
-      - name: Configure pmbootstrap after init
-        run: |
-          set -euxo pipefail
-          source ~/venv/bin/activate
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui xfce4
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config user pmos
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config hostname j7pmos
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config locale en_US.UTF-8
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config timezone UTC
-          pmbootstrap -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config kernel downstream
 
       - name: Show config status
         run: |
