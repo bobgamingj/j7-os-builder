@@ -44,16 +44,26 @@ jobs:
         run: |
           set -euxo pipefail
 
-          sudo fallocate -l 12G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo swapoff -a || true
+
+          sudo rm -f /mnt/pmos.swap || true
+
+          sudo dd if=/dev/zero of=/mnt/pmos.swap bs=1M count=8192 status=progress
+
+          sudo chmod 600 /mnt/pmos.swap
+
+          sudo mkswap /mnt/pmos.swap
+
+          sudo swapon /mnt/pmos.swap || true
+
+          free -h
 
       - name: Clone repositories
         run: |
           set -euxo pipefail
 
-          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          git clone --depth=1 \
+            https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
           git clone --depth=1 \
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
@@ -71,16 +81,15 @@ jobs:
 
           pip install ./pmbootstrap
 
-      - name: Create pmbootstrap config manually
+      - name: Create pmbootstrap config
         run: |
           set -euxo pipefail
 
-          mkdir -p ~/.config/pmbootstrap
+          mkdir -p ~/.config
 
           cat > ~/.config/pmbootstrap_v3.cfg <<EOF
           [pmbootstrap]
           work=/home/runner/.local/var/pmbootstrap
-         
 
           [providers]
           mirrors=none
@@ -117,7 +126,7 @@ jobs:
             -c ~/.config/pmbootstrap_v3.cfg \
             init
 
-      - name: Verify config
+      - name: Show config
         run: |
           set -euxo pipefail
 
@@ -127,7 +136,7 @@ jobs:
             -c ~/.config/pmbootstrap_v3.cfg \
             status
 
-      - name: Build postmarketOS recovery zip
+      - name: Build recovery zip
         run: |
           set -euxo pipefail
 
@@ -138,7 +147,7 @@ jobs:
             install \
             --android-recovery-zip
 
-      - name: Export files
+      - name: Export artifacts
         run: |
           set -euxo pipefail
 
