@@ -1,4 +1,3 @@
-
 name: Build postmarketOS Samsung J7 Mini-PC
 
 on:
@@ -11,27 +10,19 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
-
       PMOS_WORKDIR: /home/runner/.local/var/pmbootstrap
-      PMOS_APORTS: /home/runner/pmaports
+      PMOS_APORTS: /home/runner/.local/var/pmbootstrap/cache_git/pmaports
       PMOS_CONFIG: /home/runner/.config/pmbootstrap_v3.cfg
 
     steps:
-      #
-      # Checkout
-      #
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      #
-      # Install system dependencies
-      #
       - name: Install dependencies
         run: |
           set -euxo pipefail
 
           sudo apt-get update
-
           sudo apt-get install -y \
             git \
             python3 \
@@ -51,83 +42,48 @@ jobs:
             e2fsprogs \
             dosfstools \
             ccache \
-            openssl \
-            android-sdk-libsparse-utils
+            openssl
 
-      #
-      # Add swap
-      #
       - name: Create swap
         run: |
           set -euxo pipefail
 
           sudo swapoff -a || true
           sudo rm -f /mnt/pmos.swap || true
-
           sudo fallocate -l 8G /mnt/pmos.swap
-
           sudo chmod 600 /mnt/pmos.swap
-
           sudo mkswap /mnt/pmos.swap
-
           sudo swapon /mnt/pmos.swap
-
           free -h
 
-      #
-      # Clone pmaports
-      #
-      - name: Clone pmaports
-        run: |
-          set -euxo pipefail
-
-          git clone --depth=1 \
-            https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
-            "$PMOS_APORTS"
-
-      #
-      # Setup Python
-      #
-      - name: Setup Python virtualenv
+      - name: Setup Python
         run: |
           set -euxo pipefail
 
           python3 -m venv /home/runner/venv
-
           source /home/runner/venv/bin/activate
 
-          python -m pip install --upgrade \
-            pip \
-            setuptools \
-            wheel
-
-          #
-          # REQUIRED FOR PYTHON 3.10
-          #
-          python -m pip install \
-            tomli \
-            typing_extensions
-
-          #
-          # VERIFY tomli EXISTS
-          #
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install tomli
           python -c "import tomli; print('tomli OK')"
 
-          #
-          # INSTALL PMBOOTSTRAP
-          #
-          python -m pip install \
-            --no-build-isolation \
+          python -m pip install --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
-          #
-          # VERIFY PMBOOTSTRAP
-          #
           pmbootstrap --version
 
-      #
-      # Create config
-      #
+      - name: Prepare pmaports location
+        run: |
+          set -euxo pipefail
+
+          mkdir -p "$PMOS_WORKDIR/cache_git"
+          git clone --depth=1 \
+            https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
+            "$PMOS_APORTS"
+
+          test -d "$PMOS_APORTS"
+          ls -la "$PMOS_APORTS" | head
+
       - name: Create pmbootstrap config
         run: |
           set -euxo pipefail
@@ -164,9 +120,6 @@ jobs:
 
           cat "$PMOS_CONFIG"
 
-      #
-      # Initialize pmbootstrap
-      #
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
@@ -175,32 +128,21 @@ jobs:
 
           mkdir -p "$PMOS_WORKDIR"
 
-          #
-          # VERIFY AGAIN BEFORE INIT
-          #
-          python -c "import tomli"
-
           pmbootstrap \
-            --config="$PMOS_CONFIG" \
+            -c "$PMOS_CONFIG" \
             --details-to-stdout \
             init
 
-      #
-      # Show status
-      #
-      - name: pmbootstrap status
+      - name: Show status
         run: |
           set -euxo pipefail
 
           source /home/runner/venv/bin/activate
 
           pmbootstrap \
-            --config="$PMOS_CONFIG" \
+            -c "$PMOS_CONFIG" \
             status
 
-      #
-      # Build image
-      #
       - name: Build recovery zip
         run: |
           set -euxo pipefail
@@ -208,15 +150,10 @@ jobs:
           source /home/runner/venv/bin/activate
 
           pmbootstrap \
-            --config="$PMOS_CONFIG" \
+            -c "$PMOS_CONFIG" \
             install \
-            --android-recovery-zip \
-            --password 123456 \
-            --disk 8G
+            --android-recovery-zip
 
-      #
-      # Export files
-      #
       - name: Export artifacts
         run: |
           set -euxo pipefail
@@ -225,18 +162,11 @@ jobs:
 
           find "$PMOS_WORKDIR" \
             -type f \
-            \( \
-              -name "*.zip" -o \
-              -name "*.img" -o \
-              -name "*.tar.gz" \
-            \) \
+            \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
             -exec cp -v {} output/ \; || true
 
           ls -lah output
 
-      #
-      # Upload artifacts
-      #
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
