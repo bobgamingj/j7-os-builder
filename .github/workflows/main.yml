@@ -47,17 +47,14 @@ jobs:
         run: |
           source ~/venv/bin/activate
           echo "Checking available devices..."
-          pmbootstrap --details-to-stdout aports search samsung-j7elte || \
-          pmbootstrap --details-to-stdout aports search j7elte || \
-          pmbootstrap --details-to-stdout aports list | grep -i "samsung\|j7" || true
+          pmbootstrap --details-to-stdout status || true
 
       - name: Initialize pmbootstrap with Error Details
         run: |
           source ~/venv/bin/activate
           set -e  # Exit on any error
           
-          # Use explicit config calls instead of here-doc to better handle inputs
-          pmbootstrap --details-to-stdout config workdir "$PMOS_WORKDIR" || { echo "Workdir config failed"; exit 1; }
+          # Use correct pmbootstrap config syntax
           pmbootstrap --details-to-stdout config aports "$PMOS_APORTS" || { echo "Aports config failed"; exit 1; }
           pmbootstrap --details-to-stdout config channel edge || { echo "Channel config failed"; exit 1; }
           pmbootstrap --details-to-stdout config vendor samsung || { echo "Vendor config failed"; exit 1; }
