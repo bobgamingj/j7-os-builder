@@ -156,7 +156,6 @@ jobs:
           EOF
 
           cat "$PMOS_CONFIG"
-
       #
       # Initialize pmbootstrap
       #
@@ -166,29 +165,26 @@ jobs:
 
           source /home/runner/venv/bin/activate
 
-          python -c "import tomli"
+          echo "===== PMBOOTSTRAP VERSION ====="
+          pmbootstrap --version
 
-          test -f "$PMOS_CONFIG"
+          echo "===== CONFIG ====="
+          cat "$PMOS_CONFIG"
 
-          test -d "$PMOS_APORTS"
+          echo "===== PMAPORTS CHECK ====="
+          ls -lah "$PMOS_APORTS"
 
-          #
-          # FORCE DETAILED OUTPUT
-          #
+          echo "===== AVAILABLE DEVICES ====="
+          find "$PMOS_APORTS/device" -maxdepth 2 -type d | grep j7 || true
+
+          echo "===== START INIT ====="
+
           pmbootstrap \
             --details-to-stdout \
             -c "$PMOS_CONFIG" \
-            init || \
-          (
-            echo "===== PMBOOTSTRAP LOG ====="
+            init
 
-            pmbootstrap \
-              --details-to-stdout \
-              -c "$PMOS_CONFIG" \
-              log || true
-
-            exit 1
-          )
+          echo "===== INIT FINISHED ====="
 
       #
       # Show status
