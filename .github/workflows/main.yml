@@ -1,4 +1,4 @@
-name: Build postmarketOS Samsung J7
+name: Build postmarketOS Recovery ZIP
 
 on:
   workflow_dispatch:
@@ -6,268 +6,169 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
-
-    env:
-      DEBIAN_FRONTEND: noninteractive
-
-      PMOS_ROOT: /tmp/pmos-ci
-      PMOS_WORKDIR: /tmp/pmos-ci/work
-      PMOS_APORTS: /tmp/pmos-ci/pmaports
-      PMOS_CONFIG: /tmp/pmos-ci/pmbootstrap_v3.cfg
-      PMOS_VENV: /tmp/pmos-venv
 
     steps:
-      #
-      # CHECKOUT
-      #
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      #
-      # FIX UBUNTU MIRRORS
-      #
-      - name: Fix apt mirrors
+      - name: Install system dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          sudo sed -i \
-            's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-            /etc/apt/sources.list || true
-
-          echo 'Acquire::Retries "5";' \
-            | sudo tee /etc/apt/apt.conf.d/80-retries
-
-          echo 'Acquire::ForceIPv4 "true";' \
-            | sudo tee /etc/apt/apt.conf.d/99-force-ipv4
-
-          sudo apt-get clean
-
-      #
-      # INSTALL PACKAGES
-      #
-      - name: Install dependencies
-        run: |
-          set -euxo pipefail
-
-          sudo apt-get update -o Acquire::ForceIPv4=true
+          sudo apt-get update
 
           sudo apt-get install -y \
             git \
-            curl \
+            python3 \
+            python3-pip \
+            python3-venv \
+            build-essential \
+            qemu-user-static \
+            binfmt-support \
             sudo \
             zip \
             unzip \
             rsync \
-            xz-utils \
-            build-essential \
-            ca-certificates \
-            python3 \
-            python3-pip \
-            python3-venv \
-            qemu-user-static \
-            binfmt-support \
-            e2fsprogs \
-            dosfstools \
             kpartx \
-            ccache \
-            openssl
+            e2fsprogs \
+            android-sdk-libsparse-utils \
+            dosfstools \
+            fakeroot \
+            ccache
 
-      #
-      # CREATE SWAP
-      #
-      - name: Create swap
+      - name: Create virtual environment
+        shell: bash
         run: |
           set -euxo pipefail
 
-          sudo swapoff -a || true
-          sudo rm -f /mnt/pmos.swap || true
+          python3 -m venv /tmp/pmos-venv
 
-          sudo fallocate -l 8G /mnt/pmos.swap \
-            || sudo dd if=/dev/zero of=/mnt/pmos.swap bs=1M count=8192
-
-          sudo chmod 600 /mnt/pmos.swap
-          sudo mkswap /mnt/pmos.swap
-          sudo swapon /mnt/pmos.swap
-
-          free -h
-
-      #
-      # CLEAN OLD STATE
-      #
-      - name: Clean old state
-        run: |
-          set -euxo pipefail
-
-          sudo rm -rf \
-            "$PMOS_ROOT" \
-            "$PMOS_VENV" \
-            ~/.local/var/pmbootstrap \
-            ~/.cache/pmbootstrap \
-            ~/.config/pmbootstrap* \
-            ~/.local/state/pmbootstrap
-
-          mkdir -p \
-            "$PMOS_ROOT" \
-            "$PMOS_WORKDIR"
-
-      #
-      # SETUP PYTHON
-      #
-      - name: Setup Python venv
-        run: |
-          set -euxo pipefail
-
-          python3 -m venv "$PMOS_VENV"
-
-          source "$PMOS_VENV/bin/activate"
+          source /tmp/pmos-venv/bin/activate
 
           python -m pip install --upgrade \
             pip \
             setuptools \
             wheel
 
-          #
-          # REQUIRED FOR PYTHON 3.10
-          #
-          python -m pip install \
-            tomli \
-            typing_extensions
+          # Required for Python 3.10
+          python -m pip install tomli
 
-          python -c "import tomli"
-
-      #
-      # INSTALL PMBOOTSTRAP
-      #
       - name: Install pmbootstrap
+        shell: bash
         run: |
           set -euxo pipefail
 
-          source "$PMOS_VENV/bin/activate"
+          source /tmp/pmos-venv/bin/activate
 
           python -m pip install \
             --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
-          python -c "import tomli"
-
           pmbootstrap --version
 
-      #
-      # CLONE PMAPORTS
-      #
+      - name: Prepare directories
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          mkdir -p /tmp/pmos-ci
+          mkdir -p /tmp/pmos-ci/work
+          mkdir -p /tmp/pmos-ci/pmaports
+
       - name: Clone pmaports
+        shell: bash
         run: |
           set -euxo pipefail
 
-          git clone \
-            --depth=1 \
-            https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
-            "$PMOS_APORTS"
+          if [ ! -d /tmp/pmos-ci/pmaports/.git ]; then
+            git clone \
+              --depth=1 \
+              https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
+              /tmp/pmos-ci/pmaports
+          fi
 
-      #
-      # INITIALIZE PMBOOTSTRAP
-      #
       - name: Initialize pmbootstrap
+        shell: bash
         run: |
           set -euxo pipefail
 
-          source "$PMOS_VENV/bin/activate"
+          source /tmp/pmos-venv/bin/activate
 
           export PMBOOTSTRAP_NO_COLOR=1
 
-          #
-          # IMPORTANT:
-          # DO NOT PIPE ANSWERS
-          # JUST ACCEPT DEFAULTS
-          #
-          yes "" | pmbootstrap \
+          rm -f /tmp/pmos-ci/pmbootstrap_v3.cfg
+
+          cat <<EOF | pmbootstrap \
             -y \
             --details-to-stdout \
-            -c "$PMOS_CONFIG" \
-            -w "$PMOS_WORKDIR" \
-            -p "$PMOS_APORTS" \
-            init \
-            --shallow-initial-clone
+            -c /tmp/pmos-ci/pmbootstrap_v3.cfg \
+            -w /tmp/pmos-ci/work \
+            -p /tmp/pmos-ci/pmaports \
+            init --shallow-initial-clone
 
-      #
-      # CONFIGURE DEVICE
-      #
-      - name: Configure pmbootstrap
+          /tmp/pmos-ci/work
+          /tmp/pmos-ci/pmaports
+          edge
+          samsung
+          j7elte
+          downstream
+          pmos
+          default
+          default
+          default
+          xfce4
+          default
+          n
+          1
+          none
+          y
+          en_US
+          j7mini
+          y
+          EOF
+
+      - name: Show pmbootstrap config
+        shell: bash
         run: |
           set -euxo pipefail
 
-          source "$PMOS_VENV/bin/activate"
+          cat /tmp/pmos-ci/pmbootstrap_v3.cfg
 
-          pmbootstrap -c "$PMOS_CONFIG" config device samsung-j7elte
-          pmbootstrap -c "$PMOS_CONFIG" config kernel downstream
-          pmbootstrap -c "$PMOS_CONFIG" config ui xfce4
-          pmbootstrap -c "$PMOS_CONFIG" config user pmos
-          pmbootstrap -c "$PMOS_CONFIG" config hostname j7mini
-          pmbootstrap -c "$PMOS_CONFIG" config locale en_US.UTF-8
-          pmbootstrap -c "$PMOS_CONFIG" config timezone UTC
-          pmbootstrap -c "$PMOS_CONFIG" config systemd always
-
-      #
-      # SHOW CONFIG
-      #
-      - name: Verify config
+      - name: Build recovery zip
+        shell: bash
         run: |
           set -euxo pipefail
 
-          cat "$PMOS_CONFIG"
-
-          source "$PMOS_VENV/bin/activate"
-
-          pmbootstrap -c "$PMOS_CONFIG" status
-
-      #
-      # BUILD RECOVERY ZIP
-      #
-      - name: Build recovery ZIP
-        run: |
-          set -euxo pipefail
-
-          source "$PMOS_VENV/bin/activate"
+          source /tmp/pmos-venv/bin/activate
 
           export PMBOOTSTRAP_NO_COLOR=1
 
-          yes "" | pmbootstrap \
+          pmbootstrap \
             -y \
             --details-to-stdout \
-            -c "$PMOS_CONFIG" \
-            -w "$PMOS_WORKDIR" \
-            -p "$PMOS_APORTS" \
+            -c /tmp/pmos-ci/pmbootstrap_v3.cfg \
+            -w /tmp/pmos-ci/work \
+            -p /tmp/pmos-ci/pmaports \
             install \
             --android-recovery-zip \
             --password 123456
 
-      #
-      # EXPORT FILES
-      #
-      - name: Export artifacts
+      - name: Export generated files
+        shell: bash
         run: |
           set -euxo pipefail
 
-          mkdir -p output
+          source /tmp/pmos-venv/bin/activate
 
-          find "$PMOS_WORKDIR" \
-            -type f \
-            \( \
-              -name "*.zip" -o \
-              -name "*.img" -o \
-              -name "*.tar.gz" \
-            \) \
-            -exec cp -v {} output/ \; \
-            || true
+          pmbootstrap \
+            -c /tmp/pmos-ci/pmbootstrap_v3.cfg \
+            -w /tmp/pmos-ci/work \
+            -p /tmp/pmos-ci/pmaports \
+            export
 
-          ls -lah output || true
-
-      #
-      # UPLOAD
-      #
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pmos-j7-build
-          path: output/
+          name: postmarketos-j7elte
+          path: /tmp/postmarketOS-export/
