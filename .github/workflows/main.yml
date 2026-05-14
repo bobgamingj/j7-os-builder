@@ -1,191 +1,42 @@
-name: Build postmarketOS Samsung J7 ARMv7 Phosh
+ name: Initialize pmbootstrap
+  run: |
+    set -euxo pipefail
 
-on:
-  workflow_dispatch:
+    source /tmp/pmos-venv/bin/activate
 
-jobs:
-  build:
-    runs-on: ubuntu-22.04
+    # CLEAN OLD FILES
+    sudo rm -rf /tmp/pmos-ci/work
+    sudo rm -rf /tmp/pmos-ci/pmaports
+    sudo rm -f /tmp/pmos-ci/pmbootstrap_v3.cfg
 
-    env:
-      PMOS_BASE: /tmp/pmos-ci
-      PMOS_WORK: /tmp/pmos-ci/work
-      PMOS_PMAPORTS: /tmp/pmos-ci/pmaports
-      PMOS_CFG: /tmp/pmos-ci/pmbootstrap_v3.cfg
-      VENV_PATH: /tmp/pmos-venv
-      PMBOOTSTRAP_NO_COLOR: 1
+    mkdir -p /tmp/pmos-ci
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    # CLONE PMAPORTS
+    git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmaports.git /tmp/pmos-ci/pmaports
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          set -euxo pipefail
+    # CREATE CONFIG
+    cat > /tmp/pmos-ci/pmbootstrap_v3.cfg <<EOF
+    [pmbootstrap]
+    work=/tmp/pmos-ci/work
+    pmaports=/tmp/pmos-ci/pmaports
+    sudo=sudo
+    password=
+    hostname=
+    extra_space=0
 
-          sudo apt-get update
+    [device]
+    vendor=samsung
+    name=j7elte
+    arch=armv7
 
-          sudo apt-get install -y \
-            git \
-            python3 \
-            python3-pip \
-            python3-venv \
-            build-essential \
-            qemu-user-static \
-            binfmt-support \
-            sudo \
-            zip \
-            unzip \
-            rsync \
-            kpartx \
-            e2fsprogs \
-            android-sdk-libsparse-utils \
-            dosfstools \
-            fakeroot \
-            ccache \
-            parted \
-            util-linux \
-            curl \
-            wget
+    [ui]
+    selected=phosh
+    EOF
 
-      - name: Create virtual environment
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          python3 -m venv "$VENV_PATH"
-
-          source "$VENV_PATH/bin/activate"
-
-          python -m pip install --upgrade \
-            pip \
-            setuptools \
-            wheel \
-            tomli
-
-      - name: Install pmbootstrap
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          source "$VENV_PATH/bin/activate"
-
-          python -m pip install \
-            --no-build-isolation \
-            git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-
-          pmbootstrap --version
-
-      - name: Prepare directories
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          mkdir -p "$PMOS_WORK"
-
-      - name: Clone pmaports
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          rm -rf "$PMOS_PMAPORTS"
-
-          git clone \
-            --depth=1 \
-            https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
-            "$PMOS_PMAPORTS"
-
-          test -f "$PMOS_PMAPORTS/pmaports.cfg"
-
-      - name: Create pmbootstrap config manually
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          cat > "$PMOS_CFG" <<EOF
-          [pmbootstrap]
-          work=/tmp/pmos-ci/work
-          pmaports=/tmp/pmos-ci/pmaports
-          sudo=default
-
-          [device]
-          vendor=samsung
-          name=j7elte
-          arch=armv7
-
-          [ui]
-          selected=phosh
-
-          [build]
-          ccache_size=5G
-          jobs=4
-
-          [image]
-          extra_space=0
-          boot_size=512
-
-          [packages]
-          extra=
-
-          [mirror]
-          mirror=http://mirror.postmarketos.org/postmarketos/
-
-          [postmarketos]
-          channel=edge
-          EOF
-
-          cat "$PMOS_CFG"
-
-      - name: Initialize pmbootstrap
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          source "$VENV_PATH/bin/activate"
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            status
-
-      - name: Build Android recovery ZIP
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          source "$VENV_PATH/bin/activate"
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            install \
-            --android-recovery-zip \
-            --password 123456
-
-      - name: Export build
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          source "$VENV_PATH/bin/activate"
-
-          pmbootstrap \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            export
-
-          ls -lah /tmp/postmarketOS-export/
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: pmos-samsung-j7elte-phosh-armv7
-          path: /tmp/postmarketOS-export/
+    # INITIALIZE
+    pmbootstrap -y \
+      --details-to-stdout \
+      -c /tmp/pmos-ci/pmbootstrap_v3.cfg \
+      -w /tmp/pmos-ci/work \
+      -p /tmp/pmos-ci/pmaports \
+      init
