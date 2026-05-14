@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 240
 
     env:
-      PMOS_PATH: /tmp/pmos-ci
+      PMOS_BASE: /tmp/pmos-ci
       PMOS_WORK: /tmp/pmos-ci/work
       PMOS_PMAPORTS: /tmp/pmos-ci/pmaports
       PMOS_CFG: /tmp/pmos-ci/pmbootstrap_v3.cfg
@@ -20,7 +20,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install dependencies
         shell: bash
         run: |
           set -euxo pipefail
@@ -45,8 +45,8 @@ jobs:
             fakeroot \
             ccache \
             sudo \
-            ca-certificates \
-            curl
+            curl \
+            ca-certificates
 
       - name: Create Python virtual environment
         shell: bash
@@ -82,9 +82,8 @@ jobs:
         run: |
           set -euxo pipefail
 
-          mkdir -p "$PMOS_PATH"
+          mkdir -p "$PMOS_BASE"
           mkdir -p "$PMOS_WORK"
-          mkdir -p "$PMOS_PMAPORTS"
 
       - name: Clone pmaports
         shell: bash
@@ -98,11 +97,15 @@ jobs:
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_PMAPORTS"
 
+          echo "Checking pmaports repository..."
+
+          ls -lah "$PMOS_PMAPORTS"
+
           test -f "$PMOS_PMAPORTS/pmaports.cfg"
 
           echo "pmaports.cfg found successfully"
 
-      - name: Initialize pmbootstrap configuration
+      - name: Initialize pmbootstrap
         shell: bash
         run: |
           set -euxo pipefail
@@ -111,15 +114,21 @@ jobs:
 
           rm -f "$PMOS_CFG"
 
-          pmbootstrap \
+          yes "" | pmbootstrap \
+            -y \
             --details-to-stdout \
-            --non-interactive \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
             init
 
-      - name: Configure device
+          echo "Verifying generated config..."
+
+          test -f "$PMOS_CFG"
+
+          cat "$PMOS_CFG"
+
+      - name: Configure target device
         shell: bash
         run: |
           set -euxo pipefail
@@ -127,22 +136,30 @@ jobs:
           source "$VENV_PATH/bin/activate"
 
           pmbootstrap \
+            -y \
             --details-to-stdout \
-            --non-interactive \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
             config device samsung-j7elte
 
           pmbootstrap \
+            -y \
             --details-to-stdout \
-            --non-interactive \
+            -c "$PMOS_CFG" \
+            -w "$PMOS_WORK" \
+            -p "$PMOS_PMAPORTS" \
+            config vendor samsung
+
+          pmbootstrap \
+            -y \
+            --details-to-stdout \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
             config ui xfce4
 
-      - name: Show pmbootstrap configuration
+      - name: Show configuration
         shell: bash
         run: |
           set -euxo pipefail
@@ -157,8 +174,8 @@ jobs:
           source "$VENV_PATH/bin/activate"
 
           pmbootstrap \
+            -y \
             --details-to-stdout \
-            --non-interactive \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
@@ -174,16 +191,17 @@ jobs:
           source "$VENV_PATH/bin/activate"
 
           pmbootstrap \
-            --details-to-stdout \
-            --non-interactive \
+            -y \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
             export
 
+          echo "Export directory contents:"
+
           ls -lah /tmp/postmarketOS-export || true
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: postmarketos-j7elte
