@@ -1,4 +1,4 @@
-name: Build postmarketOS Samsung J7 Mini-PC
+name: Build postmarketOS Samsung J7 (Phosh ARMv7)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 240
 
     env:
       PMOS_BASE: /tmp/pmos-ci
@@ -14,7 +13,7 @@ jobs:
       PMOS_PMAPORTS: /tmp/pmos-ci/pmaports
       PMOS_CFG: /tmp/pmos-ci/pmbootstrap_v3.cfg
       VENV_PATH: /tmp/pmos-venv
-      PMBOOTSTRAP_NO_COLOR: "1"
+      PMBOOTSTRAP_NO_COLOR: 1
 
     steps:
       - name: Checkout repository
@@ -27,7 +26,7 @@ jobs:
 
           sudo apt-get update
 
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          sudo apt-get install -y \
             git \
             python3 \
             python3-pip \
@@ -35,6 +34,7 @@ jobs:
             build-essential \
             qemu-user-static \
             binfmt-support \
+            sudo \
             zip \
             unzip \
             rsync \
@@ -44,9 +44,10 @@ jobs:
             dosfstools \
             fakeroot \
             ccache \
-            sudo \
+            parted \
+            util-linux \
             curl \
-            ca-certificates
+            wget
 
       - name: Create Python virtual environment
         shell: bash
@@ -74,10 +75,9 @@ jobs:
             --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
 
-          which pmbootstrap
           pmbootstrap --version
 
-      - name: Prepare directories
+      - name: Prepare pmOS directories
         shell: bash
         run: |
           set -euxo pipefail
@@ -97,15 +97,9 @@ jobs:
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_PMAPORTS"
 
-          echo "Checking pmaports repository..."
-
-          ls -lah "$PMOS_PMAPORTS"
-
           test -f "$PMOS_PMAPORTS/pmaports.cfg"
 
-          echo "pmaports.cfg found successfully"
-
-      - name: Initialize pmbootstrap
+      - name: Initialize pmbootstrap (Samsung J7 / Phosh / ARMv7)
         shell: bash
         run: |
           set -euxo pipefail
@@ -114,11 +108,7 @@ jobs:
 
           rm -f "$PMOS_CFG"
 
-          # Disable pipefail temporarily because `yes`
-          # exits with SIGPIPE after pmbootstrap completes.
-          set +o pipefail
-
-          yes "" | pmbootstrap \
+          cat <<'EOF' | pmbootstrap \
             -y \
             --details-to-stdout \
             -c "$PMOS_CFG" \
@@ -126,69 +116,47 @@ jobs:
             -p "$PMOS_PMAPORTS" \
             init
 
-          set -o pipefail
-
-          echo "Verifying generated config..."
+          /tmp/pmos-ci/work
+          /tmp/pmos-ci/pmaports
+          edge
+          samsung
+          j7elte
+          downstream
+          user
+          default
+          default
+          default
+          phosh
+          n
+          default
+          0
+          512
+          4
+          5G
+          y
+          1
+          none
+          y
+          en_US
+          j7mini
+          y
+          EOF
 
           test -f "$PMOS_CFG"
 
-          echo "pmbootstrap config created successfully"
-
           cat "$PMOS_CFG"
 
-      - name: Configure Samsung J7 device
+      - name: Force ARMv7 architecture
         shell: bash
         run: |
           set -euxo pipefail
 
-          source "$VENV_PATH/bin/activate"
+          sed -i 's/^arch=.*/arch=armv7/' "$PMOS_CFG" || true
 
-          echo "Checking available Samsung devices..."
-
-          find "$PMOS_PMAPORTS/device" -type d | grep samsung || true
-
-          # Try Samsung J7 device configuration
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            config device samsung-j7elte || true
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            config ui xfce4
-
-      - name: Show final configuration
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          echo "===== PMBOOTSTRAP CONFIG ====="
-
+          echo "===== FINAL CONFIG ====="
           cat "$PMOS_CFG"
 
-      - name: Update repositories
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          source "$VENV_PATH/bin/activate"
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            pull
-
-      - name: Build recovery zip
+      - name: Build recovery ZIP
         shell: bash
         run: |
           set -euxo pipefail
@@ -205,7 +173,7 @@ jobs:
             --android-recovery-zip \
             --password 123456
 
-      - name: Export generated files
+      - name: Export build artifacts
         shell: bash
         run: |
           set -euxo pipefail
@@ -213,20 +181,15 @@ jobs:
           source "$VENV_PATH/bin/activate"
 
           pmbootstrap \
-            -y \
-            --details-to-stdout \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
             export
 
-          echo "===== EXPORT DIRECTORY ====="
-
-          ls -lah /tmp/postmarketOS-export || true
+          ls -lah /tmp/postmarketOS-export/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: postmarketos-j7elte
+          name: pmos-samsung-j7elte-phosh-armv7
           path: /tmp/postmarketOS-export/
-          if-no-files-found: error
