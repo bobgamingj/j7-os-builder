@@ -10,11 +10,13 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
-      PMOS_ROOT: /tmp/pmos-ci
+
+      # Keep pmbootstrap state and the Python venv in separate paths.
+      PMOS_BASE: /tmp/pmos-ci
       PMOS_WORKDIR: /tmp/pmos-ci/work
       PMOS_APORTS: /tmp/pmos-ci/pmaports
       PMOS_CONFIG: /tmp/pmos-ci/pmbootstrap_v3.cfg
-      VENV_DIR: /tmp/pmos-ci/venv
+      VENV_DIR: /tmp/pmbootstrap-venv
 
     steps:
       - name: Checkout repository
@@ -65,18 +67,6 @@ jobs:
           sudo swapon /mnt/pmos.swap
           free -h
 
-      - name: Setup Python and pmbootstrap
-        run: |
-          set -euxo pipefail
-          python3 -m venv "$VENV_DIR"
-          source "$VENV_DIR/bin/activate"
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install tomli typing_extensions
-          python -c "import tomli"
-          python -m pip install --no-build-isolation \
-            git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-          pmbootstrap --version
-
       - name: Clean old state
         run: |
           set -euxo pipefail
@@ -85,12 +75,30 @@ jobs:
             /home/runner/.config/pmbootstrap_v3.cfg \
             /home/runner/.cache/pmbootstrap \
             /home/runner/.local/state/pmbootstrap \
-            "$PMOS_ROOT"
+            "$PMOS_BASE"
           mkdir -p \
-            "$PMOS_ROOT" \
+            "$PMOS_BASE" \
             "$PMOS_WORKDIR" \
             "$PMOS_APORTS" \
             "$(dirname "$PMOS_CONFIG")"
+
+      - name: Setup Python environment
+        run: |
+          set -euxo pipefail
+          python3 -m venv "$VENV_DIR"
+          test -f "$VENV_DIR/bin/activate"
+          source "$VENV_DIR/bin/activate"
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install tomli typing_extensions
+          python -c "import tomli"
+
+      - name: Install pmbootstrap
+        run: |
+          set -euxo pipefail
+          source "$VENV_DIR/bin/activate"
+          python -m pip install --no-build-isolation \
+            git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          pmbootstrap --version
 
       - name: Clone pmaports
         run: |
@@ -99,18 +107,38 @@ jobs:
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
 
+      - name: Create pmbootstrap config
+        run: |
+          set -euxo pipefail
+          cat > "$PMOS_CONFIG" <<EOF
+          [pmbootstrap]
+          work=$PMOS_WORKDIR
+          aports=$PMOS_APORTS
+          channel=edge
+          device=samsung-j7elte
+          kernel=downstream
+          ui=xfce4
+          user=pmos
+          hostname=j7mini
+          timezone=UTC
+          locale=en_US.UTF-8
+          systemd=always
+          EOF
+          cat "$PMOS_CONFIG"
+
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
           source "$VENV_DIR/bin/activate"
-          pmbootstrap -y \
+          export PMBOOTSTRAP_NO_COLOR=1
+          pmbootstrap -y --details-to-stdout \
             -c "$PMOS_CONFIG" \
             -w "$PMOS_WORKDIR" \
             -p "$PMOS_APORTS" \
             init \
             --shallow-initial-clone
 
-      - name: Set pmbootstrap config
+      - name: Apply pmbootstrap config
         run: |
           set -euxo pipefail
           source "$VENV_DIR/bin/activate"
@@ -150,7 +178,7 @@ jobs:
             -type f \
             \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
             -exec cp -v {} output/ \; || true
-          ls -lah output
+          ls -lah output || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
