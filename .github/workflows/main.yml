@@ -10,40 +10,27 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
-
-      PMOS_WORKDIR: /tmp/pmos-work
-      PMOS_APORTS: /tmp/pmaports
+      PMOS_WORKDIR: /tmp/pmos-ci/work
+      PMOS_APORTS: /tmp/pmos-ci/pmaports
+      PMOS_CONFIG: /tmp/pmos-ci/pmbootstrap_v3.cfg
       PMOS_VENV: /tmp/pmos-venv
 
     steps:
-      #
-      # CHECKOUT
-      #
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      #
-      # FIX APT
-      #
       - name: Fix apt mirrors
         run: |
           set -euxo pipefail
-
-          sudo sed -i \
-            's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-            /etc/apt/sources.list || true
-
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list || true
           sudo apt-get clean
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99-force-ipv4 >/dev/null
 
-      #
-      # INSTALL DEPENDENCIES
-      #
       - name: Install dependencies
         run: |
           set -euxo pipefail
-
-          sudo apt-get update
-
+          sudo apt-get update -o Acquire::ForceIPv4=true
           sudo apt-get install -y \
             git \
             python3 \
@@ -65,157 +52,115 @@ jobs:
             openssl \
             sudo
 
-      #
-      # CREATE SWAP
-      #
       - name: Create swap
         run: |
           set -euxo pipefail
-
-          sudo fallocate -l 8G /mnt/pmos.swap || \
-          sudo dd if=/dev/zero of=/mnt/pmos.swap bs=1M count=8192
-
+          sudo swapoff -a || true
+          sudo rm -f /mnt/pmos.swap || true
+          sudo fallocate -l 8G /mnt/pmos.swap || sudo dd if=/dev/zero of=/mnt/pmos.swap bs=1M count=8192
           sudo chmod 600 /mnt/pmos.swap
           sudo mkswap /mnt/pmos.swap
           sudo swapon /mnt/pmos.swap
-
           free -h
 
-      #
-      # CLEAN STATE
-      #
       - name: Clean old state
         run: |
           set -euxo pipefail
-
           sudo rm -rf \
-            "$PMOS_WORKDIR" \
-            "$PMOS_APORTS" \
+            /tmp/pmos-ci \
             "$PMOS_VENV" \
-            ~/.local/var/pmbootstrap \
-            ~/.cache/pmbootstrap \
-            ~/.config/pmbootstrap* \
-            ~/.local/state/pmbootstrap
-
+            /home/runner/.local/var/pmbootstrap \
+            /home/runner/.cache/pmbootstrap \
+            /home/runner/.config/pmbootstrap* \
+            /home/runner/.local/state/pmbootstrap
           mkdir -p \
             "$PMOS_WORKDIR" \
-            "$PMOS_APORTS"
+            "$PMOS_APORTS" \
+            "$(dirname "$PMOS_CONFIG")"
 
-      #
-      # SETUP PYTHON
-      #
       - name: Setup Python
         run: |
           set -euxo pipefail
-
           python3 -m venv "$PMOS_VENV"
-
           source "$PMOS_VENV/bin/activate"
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install tomli typing_extensions
+          python -c "import tomli"
 
-          python -m pip install --upgrade \
-            pip \
-            setuptools \
-            wheel
-
-          python -m pip install \
-            tomli \
-            typing_extensions
-
-      #
-      # INSTALL PMBOOTSTRAP
-      #
       - name: Install pmbootstrap
         run: |
           set -euxo pipefail
-
           source "$PMOS_VENV/bin/activate"
-
-          python -m pip install \
-            --no-build-isolation \
+          python -m pip install --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-
+          python -c "import tomli"
           pmbootstrap --version
 
-      #
-      # CLONE PMAPORTS
-      #
       - name: Clone pmaports
         run: |
           set -euxo pipefail
-
-          git clone \
-            --depth=1 \
+          git clone --depth=1 \
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
 
-      #
-      # INITIALIZE PMBOOTSTRAP
-      #
       - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
-
           source "$PMOS_VENV/bin/activate"
-
           export PMBOOTSTRAP_NO_COLOR=1
 
-          printf '%s\n' \
-            "$PMOS_WORKDIR" \
-            "y" \
-            "edge" \
-            "samsung-j7elte" \
-            "downstream" \
-            "xfce4" \
-            "y" \
-            "none" \
-            "en_US.UTF-8" \
-            "UTC" \
-            "pmos" \
-            | pmbootstrap \
-                --aports "$PMOS_APORTS" \
-                init
+          {
+            printf '%s\n' \
+              edge \
+              samsung \
+              j7elte
+            yes '' | head -n 20
+          } | pmbootstrap -y --details-to-stdout \
+              -c "$PMOS_CONFIG" \
+              -w "$PMOS_WORKDIR" \
+              -p "$PMOS_APORTS" \
+              init \
+              --shallow-initial-clone
 
-      #
-      # BUILD RECOVERY ZIP
-      #
+      - name: Set pmbootstrap config
+        run: |
+          set -euxo pipefail
+          source "$PMOS_VENV/bin/activate"
+
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config work "$PMOS_WORKDIR"
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config aports "$PMOS_APORTS"
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config device samsung-j7elte
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config kernel downstream
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui xfce4
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config user pmos
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config hostname j7mini
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config locale en_US.UTF-8
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config timezone UTC
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config systemd always
+
       - name: Build recovery ZIP
         run: |
           set -euxo pipefail
-
           source "$PMOS_VENV/bin/activate"
-
           export PMBOOTSTRAP_NO_COLOR=1
-
-          pmbootstrap \
-            --aports "$PMOS_APORTS" \
-            --work "$PMOS_WORKDIR" \
+          pmbootstrap -y --details-to-stdout \
+            -c "$PMOS_CONFIG" \
+            -w "$PMOS_WORKDIR" \
+            -p "$PMOS_APORTS" \
             install \
             --android-recovery-zip \
             --password 123456
 
-      #
-      # EXPORT ARTIFACTS
-      #
       - name: Export artifacts
         run: |
           set -euxo pipefail
-
           mkdir -p output
-
           find "$PMOS_WORKDIR" \
             -type f \
-            \( \
-              -name "*.zip" -o \
-              -name "*.img" -o \
-              -name "*.tar.gz" \
-            \) \
+            \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
             -exec cp -v {} output/ \; || true
-
           ls -lah output || true
 
-      #
-      # UPLOAD
-      #
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
