@@ -1,4 +1,4 @@
-name: Build postmarketOS Samsung J7 Phosh ARMv7
+name: Build postmarketOS Samsung J7 ARMv7 Phosh
 
 on:
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
             curl \
             wget
 
-      - name: Create Python venv
+      - name: Create virtual environment
         shell: bash
         run: |
           set -euxo pipefail
@@ -82,7 +82,6 @@ jobs:
         run: |
           set -euxo pipefail
 
-          mkdir -p "$PMOS_BASE"
           mkdir -p "$PMOS_WORK"
 
       - name: Clone pmaports
@@ -99,14 +98,44 @@ jobs:
 
           test -f "$PMOS_PMAPORTS/pmaports.cfg"
 
-      - name: Verify pmaports
+      - name: Create pmbootstrap config manually
         shell: bash
         run: |
           set -euxo pipefail
 
-          ls -lah "$PMOS_PMAPORTS"
+          cat > "$PMOS_CFG" <<EOF
+          [pmbootstrap]
+          work=/tmp/pmos-ci/work
+          pmaports=/tmp/pmos-ci/pmaports
+          sudo=default
 
-          test -f "$PMOS_PMAPORTS/pmaports.cfg"
+          [device]
+          vendor=samsung
+          name=j7elte
+          arch=armv7
+
+          [ui]
+          selected=phosh
+
+          [build]
+          ccache_size=5G
+          jobs=4
+
+          [image]
+          extra_space=0
+          boot_size=512
+
+          [packages]
+          extra=
+
+          [mirror]
+          mirror=http://mirror.postmarketos.org/postmarketos/
+
+          [postmarketos]
+          channel=edge
+          EOF
+
+          cat "$PMOS_CFG"
 
       - name: Initialize pmbootstrap
         shell: bash
@@ -115,58 +144,15 @@ jobs:
 
           source "$VENV_PATH/bin/activate"
 
-          rm -f "$PMOS_CFG"
-
-          cat <<EOF | pmbootstrap \
+          pmbootstrap \
             -y \
             --details-to-stdout \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
-            init
+            status
 
-          /tmp/pmos-ci/work
-          /tmp/pmos-ci/pmaports
-          edge
-          samsung
-          j7elte
-          downstream
-          user
-          default
-          default
-          default
-          phosh
-          n
-          default
-          0
-          512
-          4
-          5G
-          y
-          1
-          none
-          y
-          en_US
-          j7mini
-          y
-          EOF
-
-          echo "===== GENERATED CONFIG ====="
-
-          cat "$PMOS_CFG"
-
-      - name: Force ARMv7 architecture
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          sed -i 's/^arch=.*/arch=armv7/' "$PMOS_CFG" || true
-
-          echo "===== FINAL CONFIG ====="
-
-          cat "$PMOS_CFG"
-
-      - name: Build postmarketOS ZIP
+      - name: Build Android recovery ZIP
         shell: bash
         run: |
           set -euxo pipefail
@@ -183,7 +169,7 @@ jobs:
             --android-recovery-zip \
             --password 123456
 
-      - name: Export files
+      - name: Export build
         shell: bash
         run: |
           set -euxo pipefail
