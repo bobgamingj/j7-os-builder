@@ -114,6 +114,10 @@ jobs:
 
           rm -f "$PMOS_CFG"
 
+          # Disable pipefail temporarily because `yes`
+          # exits with SIGPIPE after pmbootstrap completes.
+          set +o pipefail
+
           yes "" | pmbootstrap \
             -y \
             --details-to-stdout \
@@ -122,13 +126,54 @@ jobs:
             -p "$PMOS_PMAPORTS" \
             init
 
+          set -o pipefail
+
           echo "Verifying generated config..."
 
           test -f "$PMOS_CFG"
 
+          echo "pmbootstrap config created successfully"
+
           cat "$PMOS_CFG"
 
-      - name: Configure target device
+      - name: Configure Samsung J7 device
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          source "$VENV_PATH/bin/activate"
+
+          echo "Checking available Samsung devices..."
+
+          find "$PMOS_PMAPORTS/device" -type d | grep samsung || true
+
+          # Try Samsung J7 device configuration
+          pmbootstrap \
+            -y \
+            --details-to-stdout \
+            -c "$PMOS_CFG" \
+            -w "$PMOS_WORK" \
+            -p "$PMOS_PMAPORTS" \
+            config device samsung-j7elte || true
+
+          pmbootstrap \
+            -y \
+            --details-to-stdout \
+            -c "$PMOS_CFG" \
+            -w "$PMOS_WORK" \
+            -p "$PMOS_PMAPORTS" \
+            config ui xfce4
+
+      - name: Show final configuration
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "===== PMBOOTSTRAP CONFIG ====="
+
+          cat "$PMOS_CFG"
+
+      - name: Update repositories
         shell: bash
         run: |
           set -euxo pipefail
@@ -141,30 +186,7 @@ jobs:
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
-            config device samsung-j7elte
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            config vendor samsung
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            -c "$PMOS_CFG" \
-            -w "$PMOS_WORK" \
-            -p "$PMOS_PMAPORTS" \
-            config ui xfce4
-
-      - name: Show configuration
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          cat "$PMOS_CFG"
+            pull
 
       - name: Build recovery zip
         shell: bash
@@ -192,12 +214,13 @@ jobs:
 
           pmbootstrap \
             -y \
+            --details-to-stdout \
             -c "$PMOS_CFG" \
             -w "$PMOS_WORK" \
             -p "$PMOS_PMAPORTS" \
             export
 
-          echo "Export directory contents:"
+          echo "===== EXPORT DIRECTORY ====="
 
           ls -lah /tmp/postmarketOS-export || true
 
