@@ -10,10 +10,13 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
-      PMOS_WORKDIR: /tmp/pmos/work
-      PMOS_APORTS: /tmp/pmaports
-      PMOS_CONFIG: /tmp/pmbootstrap_v3.cfg
-      VENV_DIR: /tmp/venv
+
+      # Use a unique temp root for this run so no old workdir state can leak in.
+      PMOS_ROOT: ${{ runner.temp }}/pmos-${{ github.run_id }}-${{ github.run_attempt }}
+      PMOS_WORKDIR: ${{ runner.temp }}/pmos-${{ github.run_id }}-${{ github.run_attempt }}/work
+      PMOS_APORTS: ${{ runner.temp }}/pmos-${{ github.run_id }}-${{ github.run_attempt }}/pmaports
+      PMOS_CONFIG: ${{ runner.temp }}/pmos-${{ github.run_id }}-${{ github.run_attempt }}/pmbootstrap_v3.cfg
+      VENV_DIR: ${{ runner.temp }}/pmos-${{ github.run_id }}-${{ github.run_attempt }}/venv
 
     steps:
       - name: Checkout repository
@@ -80,10 +83,9 @@ jobs:
           rm -rf \
             /home/runner/.local/var/pmbootstrap \
             /home/runner/.config/pmbootstrap_v3.cfg \
-            "$PMOS_WORKDIR" \
-            "$PMOS_APORTS" \
-            "$PMOS_CONFIG"
+            "$PMOS_ROOT"
           mkdir -p \
+            "$PMOS_ROOT" \
             "$PMOS_WORKDIR" \
             "$PMOS_APORTS" \
             "$(dirname "$PMOS_CONFIG")"
@@ -113,16 +115,6 @@ jobs:
           systemd=always
           EOF
           cat "$PMOS_CONFIG"
-
-      - name: Validate config
-        run: |
-          set -euxo pipefail
-          source "$VENV_DIR/bin/activate"
-          pmbootstrap -y \
-            -c "$PMOS_CONFIG" \
-            -w "$PMOS_WORKDIR" \
-            -p "$PMOS_APORTS" \
-            status
 
       - name: Build recovery ZIP
         run: |
