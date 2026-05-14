@@ -10,8 +10,6 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
-
-      # STATIC SAFE PATHS
       PMOS_ROOT: /tmp/pmos-ci
       PMOS_WORKDIR: /tmp/pmos-ci/work
       PMOS_APORTS: /tmp/pmos-ci/pmaports
@@ -19,40 +17,21 @@ jobs:
       VENV_DIR: /tmp/pmos-ci/venv
 
     steps:
-      #
-      # Checkout
-      #
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      #
-      # Fix Ubuntu mirrors
-      #
       - name: Fix apt mirrors
         run: |
           set -euxo pipefail
-
-          sudo sed -i \
-            's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-            /etc/apt/sources.list || true
-
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list || true
           sudo apt-get clean
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99-force-ipv4 >/dev/null
 
-          echo 'Acquire::Retries "5";' \
-            | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
-
-          echo 'Acquire::ForceIPv4 "true";' \
-            | sudo tee /etc/apt/apt.conf.d/99-force-ipv4 >/dev/null
-
-      #
-      # Install packages
-      #
       - name: Install dependencies
         run: |
           set -euxo pipefail
-
           sudo apt-get update -o Acquire::ForceIPv4=true
-
           sudo apt-get install -y \
             git \
             python3 \
@@ -61,6 +40,7 @@ jobs:
             python3-tomli \
             build-essential \
             ca-certificates \
+            sudo \
             curl \
             rsync \
             unzip \
@@ -72,183 +52,106 @@ jobs:
             e2fsprogs \
             dosfstools \
             ccache \
-            openssl \
-            sudo
+            openssl
 
-      #
-      # Create swap
-      #
       - name: Create swap
         run: |
           set -euxo pipefail
-
           sudo swapoff -a || true
           sudo rm -f /mnt/pmos.swap || true
-
-          sudo fallocate -l 8G /mnt/pmos.swap || \
-          sudo dd if=/dev/zero of=/mnt/pmos.swap bs=1M count=8192
-
+          sudo fallocate -l 8G /mnt/pmos.swap || sudo dd if=/dev/zero of=/mnt/pmos.swap bs=1M count=8192
           sudo chmod 600 /mnt/pmos.swap
           sudo mkswap /mnt/pmos.swap
           sudo swapon /mnt/pmos.swap
-
           free -h
 
-      #
-      # HARD RESET PMBOOTSTRAP STATE
-      #
-      - name: Remove ALL old pmbootstrap state
+      - name: Setup Python and pmbootstrap
         run: |
           set -euxo pipefail
-
-          sudo rm -rf \
-            /home/runner/.local/var/pmbootstrap \
-            /home/runner/.config/pmbootstrap_v3.cfg \
-            /tmp/pmos-ci \
-            ~/.cache/pmbootstrap \
-            ~/.local/state/pmbootstrap \
-            ~/.config/pmbootstrap
-
-          sudo mkdir -p \
-            "$PMOS_ROOT" \
-            "$PMOS_WORKDIR" \
-            "$PMOS_APORTS"
-
-          sudo chown -R runner:runner "$PMOS_ROOT"
-
-      #
-      # Setup Python
-      #
-      - name: Setup Python environment
-        run: |
-          set -euxo pipefail
-
           python3 -m venv "$VENV_DIR"
-
           source "$VENV_DIR/bin/activate"
-
-          python -m pip install --upgrade \
-            pip \
-            setuptools \
-            wheel
-
-          python -m pip install \
-            tomli \
-            typing_extensions
-
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install tomli typing_extensions
           python -c "import tomli"
-
-      #
-      # Install pmbootstrap
-      #
-      - name: Install pmbootstrap
-        run: |
-          set -euxo pipefail
-
-          source "$VENV_DIR/bin/activate"
-
-          python -m pip install \
-            --no-build-isolation \
+          python -m pip install --no-build-isolation \
             git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
-
           pmbootstrap --version
 
-      #
-      # Clone pmaports
-      #
+      - name: Clean old state
+        run: |
+          set -euxo pipefail
+          rm -rf \
+            /home/runner/.local/var/pmbootstrap \
+            /home/runner/.config/pmbootstrap_v3.cfg \
+            /home/runner/.cache/pmbootstrap \
+            /home/runner/.local/state/pmbootstrap \
+            "$PMOS_ROOT"
+          mkdir -p \
+            "$PMOS_ROOT" \
+            "$PMOS_WORKDIR" \
+            "$PMOS_APORTS" \
+            "$(dirname "$PMOS_CONFIG")"
+
       - name: Clone pmaports
         run: |
           set -euxo pipefail
-
-          git clone \
-            --depth=1 \
+          git clone --depth=1 \
             https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
             "$PMOS_APORTS"
 
-      #
-      # Create config
-      #
-      - name: Create pmbootstrap config
+      - name: Initialize pmbootstrap
         run: |
           set -euxo pipefail
+          source "$VENV_DIR/bin/activate"
+          pmbootstrap -y \
+            -c "$PMOS_CONFIG" \
+            -w "$PMOS_WORKDIR" \
+            -p "$PMOS_APORTS" \
+            init \
+            --shallow-initial-clone
 
-          cat > "$PMOS_CONFIG" <<EOF
-          [pmbootstrap]
-          work=/tmp/pmos-ci/work
-          aports=/tmp/pmos-ci/pmaports
-          channel=edge
-          device=samsung-j7elte
-          kernel=downstream
-          user=pmos
-          ui=xfce4
-          hostname=j7mini
-          timezone=UTC
-          locale=en_US.UTF-8
-          systemd=always
-          EOF
-
-          echo "===== CONFIG ====="
-          cat "$PMOS_CONFIG"
-
-      #
-      # FORCE CLEAN WORKDIR
-      #
-      - name: Ensure clean workdir
+      - name: Set pmbootstrap config
         run: |
           set -euxo pipefail
+          source "$VENV_DIR/bin/activate"
 
-          sudo rm -rf /tmp/pmos-ci/work
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config work "$PMOS_WORKDIR"
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config aports "$PMOS_APORTS"
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config channel edge
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config device samsung-j7elte
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config kernel downstream
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config ui xfce4
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config user pmos
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config hostname j7mini
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config timezone UTC
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config locale en_US.UTF-8
+          pmbootstrap -c "$PMOS_CONFIG" -w "$PMOS_WORKDIR" -p "$PMOS_APORTS" config systemd always
 
-          mkdir -p /tmp/pmos-ci/work
-
-          ls -lah /tmp/pmos-ci
-
-      #
-      # BUILD
-      #
       - name: Build recovery ZIP
         run: |
           set -euxo pipefail
-
           source "$VENV_DIR/bin/activate"
-
           export PMBOOTSTRAP_NO_COLOR=1
-
-          pmbootstrap \
-            -y \
-            --details-to-stdout \
-            --config="$PMOS_CONFIG" \
-            --aports="$PMOS_APORTS" \
-            --work="$PMOS_WORKDIR" \
+          pmbootstrap -y --details-to-stdout \
+            -c "$PMOS_CONFIG" \
+            -w "$PMOS_WORKDIR" \
+            -p "$PMOS_APORTS" \
             install \
             --android-recovery-zip \
-            --password 123456
+            --password 123456 \
+            --no-sshd \
+            --no-firewall
 
-      #
-      # Collect outputs
-      #
       - name: Export artifacts
         run: |
           set -euxo pipefail
-
           mkdir -p output
-
           find "$PMOS_WORKDIR" \
             -type f \
-            \( \
-              -name "*.zip" -o \
-              -name "*.img" -o \
-              -name "*.tar.gz" \
-            \) \
+            \( -name "*.zip" -o -name "*.img" -o -name "*.tar.gz" \) \
             -exec cp -v {} output/ \; || true
+          ls -lah output
 
-          echo "===== OUTPUT FILES ====="
-
-          ls -lah output || true
-
-      #
-      # Upload
-      #
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
