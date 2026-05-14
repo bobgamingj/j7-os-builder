@@ -1,4 +1,4 @@
-name: Build postmarketOS Samsung J7 (Phosh ARMv7)
+name: Build postmarketOS Samsung J7 Phosh ARMv7
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
       PMBOOTSTRAP_NO_COLOR: 1
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -49,7 +49,7 @@ jobs:
             curl \
             wget
 
-      - name: Create Python virtual environment
+      - name: Create Python venv
         shell: bash
         run: |
           set -euxo pipefail
@@ -77,7 +77,7 @@ jobs:
 
           pmbootstrap --version
 
-      - name: Prepare pmOS directories
+      - name: Prepare directories
         shell: bash
         run: |
           set -euxo pipefail
@@ -99,7 +99,16 @@ jobs:
 
           test -f "$PMOS_PMAPORTS/pmaports.cfg"
 
-      - name: Initialize pmbootstrap (Samsung J7 / Phosh / ARMv7)
+      - name: Verify pmaports
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          ls -lah "$PMOS_PMAPORTS"
+
+          test -f "$PMOS_PMAPORTS/pmaports.cfg"
+
+      - name: Initialize pmbootstrap
         shell: bash
         run: |
           set -euxo pipefail
@@ -108,7 +117,7 @@ jobs:
 
           rm -f "$PMOS_CFG"
 
-          cat <<'EOF' | pmbootstrap \
+          cat <<EOF | pmbootstrap \
             -y \
             --details-to-stdout \
             -c "$PMOS_CFG" \
@@ -142,7 +151,7 @@ jobs:
           y
           EOF
 
-          test -f "$PMOS_CFG"
+          echo "===== GENERATED CONFIG ====="
 
           cat "$PMOS_CFG"
 
@@ -154,9 +163,10 @@ jobs:
           sed -i 's/^arch=.*/arch=armv7/' "$PMOS_CFG" || true
 
           echo "===== FINAL CONFIG ====="
+
           cat "$PMOS_CFG"
 
-      - name: Build recovery ZIP
+      - name: Build postmarketOS ZIP
         shell: bash
         run: |
           set -euxo pipefail
@@ -173,7 +183,7 @@ jobs:
             --android-recovery-zip \
             --password 123456
 
-      - name: Export build artifacts
+      - name: Export files
         shell: bash
         run: |
           set -euxo pipefail
