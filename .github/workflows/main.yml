@@ -66,7 +66,7 @@ jobs:
             sudo
 
       #
-      # SWAP
+      # CREATE SWAP
       #
       - name: Create swap
         run: |
@@ -82,9 +82,9 @@ jobs:
           free -h
 
       #
-      # CLEAN EVERYTHING
+      # CLEAN STATE
       #
-      - name: Clean state
+      - name: Clean old state
         run: |
           set -euxo pipefail
 
@@ -102,7 +102,7 @@ jobs:
             "$PMOS_APORTS"
 
       #
-      # PYTHON VENV
+      # SETUP PYTHON
       #
       - name: Setup Python
         run: |
@@ -149,7 +149,7 @@ jobs:
             "$PMOS_APORTS"
 
       #
-      # PMBOOTSTRAP INIT
+      # INITIALIZE PMBOOTSTRAP
       #
       - name: Initialize pmbootstrap
         run: |
@@ -159,9 +159,6 @@ jobs:
 
           export PMBOOTSTRAP_NO_COLOR=1
 
-          #
-          # AUTOMATIC ANSWERS
-          #
           printf '%s\n' \
             "$PMOS_WORKDIR" \
             "y" \
@@ -174,8 +171,9 @@ jobs:
             "en_US.UTF-8" \
             "UTC" \
             "pmos" \
-            | pmbootstrap init \
-                --aports "$PMOS_APORTS"
+            | pmbootstrap \
+                --aports "$PMOS_APORTS" \
+                init
 
       #
       # BUILD RECOVERY ZIP
@@ -188,12 +186,15 @@ jobs:
 
           export PMBOOTSTRAP_NO_COLOR=1
 
-          pmbootstrap install \
+          pmbootstrap \
+            --aports "$PMOS_APORTS" \
+            --work "$PMOS_WORKDIR" \
+            install \
             --android-recovery-zip \
             --password 123456
 
       #
-      # EXPORT FILES
+      # EXPORT ARTIFACTS
       #
       - name: Export artifacts
         run: |
